@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Perps Tracker</title>
+  <script>
+    // Apply the saved theme before first paint (falls back to the OS setting).
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem('perps.theme'); } catch (e) {}
+      if (t !== 'light' && t !== 'dark') t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23000'/%3E%3Crect x='7' y='17' width='4.5' height='9' rx='1.2' fill='%23f4f4f5'/%3E%3Crect x='13.75' y='11' width='4.5' height='15' rx='1.2' fill='%23f4f4f5'/%3E%3Crect x='20.5' y='6' width='4.5' height='20' rx='1.2' fill='%23ee5a24'/%3E%3C/svg%3E">
+  <link rel="preload" href="fonts/HostGrotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/GeistMono-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/BigShouldersDisplay-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="nav">
+    <a class="logo" href="#overview" aria-label="Perps Tracker, overview">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="13" width="5.5" height="9" rx="1.4"/><rect x="9.25" y="7.5" width="5.5" height="14.5" rx="1.4"/><rect x="16.5" y="2" width="5.5" height="20" rx="1.4"/></svg>
+      <b>Perps</b>
+    </a>
+    <nav class="dock" aria-label="Pages">
+      <a href="#overview" data-view="overview"><i data-icon="overview"></i><span>Overview</span></a>
+      <a href="#live" data-view="live"><i data-icon="activity"></i><span>Live</span></a>
+      <a href="#strategy" data-view="strategy"><i data-icon="strategy"></i><span>Strategy</span></a>
+      <a href="#fees" data-view="fees"><i data-icon="receipt"></i><span>Fees</span></a>
+      <a href="#points" data-view="points"><i data-icon="star"></i><span>Points</span></a>
+      <a href="#leagues" data-view="leagues"><i data-icon="trophy"></i><span>Leagues</span></a>
+      <a href="#referrals" data-view="referrals"><i data-icon="gift"></i><span>Referrals</span></a>
+    </nav>
+    <div class="nav-right">
+      <div id="sync" class="sync" aria-live="polite"></div>
+      <button id="btn-refresh" class="icon-btn" title="Sync now" aria-label="Sync now"><i data-icon="refresh"></i></button>
+      <button id="btn-tour" class="icon-btn" title="Take the tour" aria-label="Take the tour"><i data-icon="book"></i></button>
+      <a id="btn-x" class="btn btn-ghost x-btn" href="https://x.com/Korgonxx" target="_blank" rel="noopener noreferrer" title="Follow @Korgonxx on X for updates" aria-label="Follow @Korgonxx on X"><span class="x-mark" aria-hidden="true">𝕏</span><span class="lbl">Follow</span></a>
+      <button id="btn-theme" class="icon-btn" title="Light or dark" aria-label="Switch between light and dark"><i data-icon="sun" data-cls="theme-sun"></i><i data-icon="moon" data-cls="theme-moon"></i></button>
+      <button id="btn-wallets" class="btn btn-primary" aria-label="Settings"><i data-icon="settings"></i><span class="lbl">Settings</span></button>
+    </div>
+  </header>
+
+  <div class="update-bar" id="update-bar" role="status" hidden>
+    <i data-icon="refresh"></i>
+    <span><b>Restart the tracker to finish updating.</b> The black window is still running the old version, so some new numbers are missing. Close it, then double-click <code>start.bat</code>.</span>
+  </div>
+
+  <div class="official-bar" id="official-bar" role="status" hidden></div>
+
+  <main class="wrap">
+    <!-- First-run setup (onboarding.js) -->
+    <section id="onboarding" class="onboard" hidden></section>
+
+    <!-- Overview -->
+    <section id="view-overview" data-view-panel="overview" hidden>
+      <div class="phead">
+        <div class="phead-title">
+          <span class="ptile"><i data-icon="overview"></i></span>
+          <div><p class="hello" id="hello" hidden></p><h1>Overview</h1><p id="ov-sub">Volume, open interest and hold time on every exchange.</p></div>
+        </div>
+        <div class="tools">
+          <div class="seg mono-seg" id="ov-range" role="group" aria-label="Time range">
+            <button data-v="24h">24H</button><button data-v="7d">7D</button><button data-v="30d">30D</button><button data-v="all">All</button>
+          </div>
+        </div>
+      </div>
+      <div class="board" id="ov-board"></div>
+      <div class="grid g3" id="ov-venues" style="margin-top:12px"></div>
+      <div class="grid g-wide" style="margin-top:12px">
+        <div class="panel">
+          <div class="ph">
+            <div><h2 class="ph-title"><i data-icon="chart"></i>Daily volume</h2><p class="ph-sub">Last 30 days, your local time</p></div>
+            <div class="tools"><div class="legend" id="ov-chart-legend"></div><button class="btn btn-sm" id="ov-chart-table" aria-pressed="false"></button></div>
+          </div>
+          <div class="pb"><div class="chart" id="ov-chart"></div><div class="table-wrap" id="ov-chart-tbl" hidden></div></div>
+        </div>
+        <div class="panel">
+          <div class="ph"><div><h2 class="ph-title"><i data-icon="hourglass"></i>Hold time</h2><p class="ph-sub" id="ov-hold-sub"></p></div></div>
+          <div class="pb" id="ov-hold"></div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <div class="ph ruled">
+          <div><h2 class="ph-title"><i data-icon="scale"></i>Hedges</h2><p class="ph-sub">Open positions grouped by asset across exchanges. A pair is hedged when its long and short sizes cancel out.</p></div>
+          <div class="tools" id="ov-hedge-chips"></div>
+        </div>
+        <div class="table-wrap" id="ov-hedges"></div>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <div class="ph ruled"><div><h2 class="ph-title"><i data-icon="layers"></i>Open positions</h2><p class="ph-sub" id="ov-pos-sub"></p></div></div>
+        <div class="table-wrap" id="ov-positions"></div>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <div class="ph ruled"><div><h2 class="ph-title"><i data-icon="history"></i>Closed positions</h2><p class="ph-sub" id="ov-closed-sub"></p></div></div>
+        <div class="table-wrap" id="ov-closed"></div>
+        <div class="more-row" id="ov-more-row" hidden><button class="btn btn-sm" id="ov-more">Show 25 more</button></div>
+      </div>
+      <details class="panel howto" style="margin-top:12px">
+        <summary><i data-icon="book"></i>How the numbers are worked out<i data-icon="chevron" data-cls="chev"></i></summary>
+        <ul>
+          <li><b>Volume</b> is the notional of every fill (size × price), maker and taker, across your wallets and sub-accounts.</li>
+          <li><b>Open interest</b> is the current notional of your open positions at the exchange's mark price.</li>
+          <li><b>Hold time</b> runs from when a position opens from flat to when it's fully closed. Adding or trimming doesn't restart the clock; a flip closes one position and opens the next. Bulk's own closed-position records are used where available.</li>
+          <li><b>Average open interest</b> is your OI averaged over the range, time-weighted and valued at your fill prices.</li>
+          <li><b>Hedges</b> group positions in the same asset across exchanges (NVDA-USD on Arcus and xyz:NVDA on Entropy count as NVDA, and an index perp priced like its ETF, such as mkts:US500 at SPY's price, joins SPY). Distance is how far the price has to move against a leg to reach its liquidation price. Bulk and Hyperliquid report liquidation prices; Arcus doesn't, so its price is estimated from the market's maintenance margin (marked ≈).</li>
+          <li><b>Entropy</b> runs on Hyperliquid. Trades you place on entropy.io count on any market (Entropy tags its orders); trades from other apps on the same Hyperliquid account are left out.</li>
+          <li>Ranges are rolling. History is cached in the <code>data</code> folder, so it survives restarts and the exchanges' own history limits.</li>
+        </ul>
+      </details>
+    </section>
+
+    <!-- Live -->
+    <section id="view-live" data-view-panel="live" hidden>
+      <div class="phead">
+        <div class="phead-title">
+          <span class="ptile"><i data-icon="activity"></i></span>
+          <div><h1>Live</h1><p>Your open trades right now, each with its hedge: how long it has been held, its PnL and how far it is from liquidation.</p></div>
+        </div>
+        <div class="tools"><span class="lv-stamp"><span class="lv-dot" aria-hidden="true"></span><span id="live-stamp">Loading…</span></span></div>
+      </div>
+      <div class="stack" id="live-main"></div>
+    </section>
+
+    <!-- Strategy -->
+    <section id="view-strategy" data-view-panel="strategy" hidden>
+      <div class="phead">
+        <div class="phead-title">
+          <span class="ptile"><i data-icon="strategy"></i></span>
+          <div><h1>Strategy</h1><p id="st-sub">An Arcus points routine, measured on your trading. Habits turn green as you match them.</p></div>
+        </div>
+        <div class="tools">
+          <div class="seg multi" id="st-platform" role="group" aria-label="Exchanges to measure. Pick one or more" title="Pick one or more exchanges">
+            <button data-v="arcus"><span class="cbx" aria-hidden="true"></span><span data-exm="arcus" data-size="sm"></span>Arcus</button>
+            <button data-v="bulk"><span class="cbx" aria-hidden="true"></span><span data-exm="bulk" data-size="sm"></span>Bulk</button>
+            <button data-v="entropy"><span class="cbx" aria-hidden="true"></span><span data-exm="entropy" data-size="sm"></span>Entropy</button>
+            <button data-v="all">All</button>
+          </div>
+          <label class="select-wrap"><i data-icon="calendar"></i>
+            <select class="select" id="st-window" aria-label="Time window">
+              <option value="thisWeek">This points week</option>
+              <option value="lastWeek">Last points week</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+              <option value="all">All history</option>
+            </select><i data-icon="chevron" data-cls="chev"></i>
+          </label>
+        </div>
+      </div>
+      <p class="window-note" id="st-window-note"></p>
+      <div class="st-layout">
+        <div class="stack" id="st-main"></div>
+        <aside class="st-rail" id="st-rail" aria-label="Strategy checklist"></aside>
+      </div>
+    </section>
+
+    <!-- Fees -->
+    <section id="view-fees" data-view-panel="fees" hidden>
+      <div class="phead">
+        <div class="phead-title">
+          <span class="ptile"><i data-icon="receipt"></i></span>
+          <div><h1>Fees</h1><p>What you paid in trading fees and funding on each exchange, taken from your trades.</p></div>
+        </div>
+        <div class="tools">
+          <label class="select-wrap"><i data-icon="calendar"></i>
+            <select class="select" id="fees-window" aria-label="Time window">
+              <option value="thisWeek">This points week</option>
+              <option value="lastWeek">Last points week</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+              <option value="all">All history</option>
+            </select><i data-icon="chevron" data-cls="chev"></i>
+          </label>
+        </div>
+      </div>
+      <div class="stack" id="fees-main"></div>
+    </section>
+
+    <!-- Points -->
+    <section id="view-points" data-view-panel="points" hidden>
+      <div class="phead">
+        <div class="phead-title">
+          <span class="ptile"><i data-icon="star"></i></span>
+          <div><h1>Points</h1><p>AURA and points on each exchange, when the next drop lands, and what your points cost in fees.</p></div>
+        </div>
+      </div>
+      <div class="stack" id="pts-main"></div>
+    </section>
+    <!-- Leagues -->
+    <section id="view-leagues" data-view-panel="leagues" hidden>
+      <div class="phead">
+        <div class="phead-title">
+          <span class="ptile"><i data-icon="trophy"></i></span>
+          <div><h1>Leagues</h1><p>Bulk shares 12.5% of its net fees with the top trading leagues every AURA Saturday, starting 17 Oct.</p></div>
+        </div>
+      </div>
+      <div class="stack" id="lg-main"></div>
+    </section>
+    <!-- Referrals -->
+    <section id="view-referrals" data-view-panel="referrals" hidden>
+      <div class="phead">
+        <div class="phead-title">
+          <span class="ptile"><i data-icon="gift"></i></span>
+          <div><h1>Referrals & codes</h1><p>Sign-up codes for each exchange, and your own referral codes, ready to copy and share.</p></div>
+        </div>
+      </div>
+      <div class="stack" id="rf-main"></div>
+    </section>
+  </main>
+
+  <footer class="ticker" id="ticker" aria-label="Status"></footer>
+  <div id="tooltip" class="tooltip" role="status" hidden></div>
+
+  <dialog id="wallets-dialog" class="dialog" aria-labelledby="wallets-title">
+    <form method="dialog" id="wallets-form" novalidate>
+      <div class="dialog-head">
+        <h2 id="wallets-title"><i data-icon="settings"></i>Settings</h2>
+        <div class="seg" id="set-tabs" role="tablist" aria-label="Settings sections">
+          <button type="button" data-v="wallets" role="tab"><i data-icon="wallet" data-cls="sm"></i>Wallets</button>
+          <button type="button" data-v="points" role="tab"><i data-icon="star" data-cls="sm"></i>Points</button>
+          <button type="button" data-v="alerts" role="tab"><i data-icon="alert" data-cls="sm"></i>Alerts</button>
+          <button type="button" data-v="display" role="tab"><i data-icon="sliders" data-cls="sm"></i>Display</button>
+          <button type="button" data-v="data" role="tab"><i data-icon="shield" data-cls="sm"></i>System</button>
+        </div>
+        <button type="button" class="icon-btn" data-close aria-label="Close"><i data-icon="x"></i></button>
+      </div>
+      <div class="dialog-body">
+        <div data-set-panel="wallets">
+          <div id="wallets-body"></div>
+          <div class="wsec">
+            <div class="wsec-head"><i data-icon="refresh"></i><h3>Sync</h3></div>
+            <label class="refresh-pick">Fetch new trades every
+              <select id="refresh-seconds">
+                <option value="30">30 seconds</option>
+                <option value="60">1 minute</option>
+                <option value="120">2 minutes</option>
+                <option value="300">5 minutes</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div data-set-panel="points" hidden>
+          <div class="wsec">
+            <div class="wsec-head"><span data-exm="arcus"></span><h3>Arcus points name</h3></div>
+            <p class="wsec-hint">Arcus only shows your own points when you're logged in, but its public leaderboard lists everyone's points under a points name. Enter yours, exactly as it appears on <a href="https://app.arcus.xyz/rewards?tab=points" target="_blank" rel="noopener noreferrer">app.arcus.xyz/rewards</a> (usually an adjective and an animal, like Rustic Owl), and the tracker loads your points, rank and tier.</p>
+            <input type="text" id="arcus-name" class="wide" maxlength="60" placeholder="Your Arcus points name" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="wsec">
+            <div class="wsec-head"><span data-exm="bulk"></span><h3>Bulk AURA</h3></div>
+            <p class="wsec-hint">Loaded automatically from Bulk's AURA page for your Bulk wallet: total, pre-deposit AURA, weekly trading AURA, leagues and the next reveal. Nothing to set up.</p>
+          </div>
+          <div class="wsec">
+            <div class="wsec-head"><span data-exm="entropy"></span><h3>Entropy points</h3></div>
+            <p class="wsec-hint">Entropy hasn't launched points yet. Your Entropy trading is already being recorded, and you can log a total on the Points page as soon as Entropy shows one.</p>
+          </div>
+        </div>
+        <div data-set-panel="alerts" hidden><div id="alerts-body"></div></div>
+        <div data-set-panel="display" hidden><div id="display-body"></div></div>
+        <div data-set-panel="data" hidden>
+          <div id="system-body"></div>
+          <div class="wsec">
+            <div class="wsec-head"><i data-icon="download"></i><h3>Export your data</h3></div>
+            <p class="wsec-hint">Everything stays on this computer. Export a copy to keep as a backup or open in a spreadsheet.</p>
+            <div class="export-list">
+              <a class="export" href="/api/export/all" download><i data-icon="layers"></i><span><b>Everything</b><span>Settings, wallets, every exchange's cached history, points and points logs, and the computed stats (JSON).</span></span><i data-icon="download" data-cls="sm"></i></a>
+              <a class="export" href="/api/export/trades.csv" download><i data-icon="table"></i><span><b>Trades</b><span>Every fill on every exchange: time, market, side, size, price, notional, fee, maker or taker, PnL (CSV).</span></span><i data-icon="download" data-cls="sm"></i></a>
+              <a class="export" href="/api/export/positions.csv" download><i data-icon="history"></i><span><b>Closed positions</b><span>Every position from open to close with its hold time and volume (CSV).</span></span><i data-icon="download" data-cls="sm"></i></a>
+              <a class="export" href="/api/export/points.csv" download><i data-icon="star"></i><span><b>Points</b><span>Bulk AURA per week (pre-deposit and mainnet), Arcus points per drop, and any totals you logged, with the fees behind them (CSV).</span></span><i data-icon="download" data-cls="sm"></i></a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="dialog-foot">
+        <div class="dialog-error" id="wallets-error" role="alert"></div>
+        <div class="dialog-buttons">
+          <button type="button" class="btn" data-close>Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-save"><i data-icon="check"></i>Save and sync</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="js/core.js"></script>
+  <script src="js/icons.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/overview.js"></script>
+  <script src="js/live.js"></script>
+  <script src="js/strategy.js"></script>
+  <script src="js/fees.js"></script>
+  <script src="js/points.js"></script>
+  <script src="js/leagues.js"></script>
+  <script src="js/display.js"></script>
+  <script src="js/system.js"></script>
+  <script src="js/pulse.js"></script>
+  <script src="js/alerts.js"></script>
+  <script src="js/referrals.js"></script>
+  <script src="js/onboarding.js"></script>
+  <script src="js/tour.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

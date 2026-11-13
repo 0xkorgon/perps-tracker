@@ -1,0 +1,16 @@
+{
+  "name": "perps-tracker",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Local dashboard for your volume, open interest, hedges and points on Bulk, Arcus and Entropy",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "once": "node server.js --once",
+    "release": "node tools/release.js build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
