@@ -628,7 +628,7 @@ function bulkVolumeStatus(st) {
   if (!v) return null;
   const keys = Object.keys(v.hours || {}).map(Number);
   const meta = v.meta || {};
-  return { readAt: v.at || null, coveredUntil: v.coveredUntil || null, finalUntil: v.finalUntil || null, latestHour: keys.length ? Math.max(...keys) : null, markets: v.markets || null, trading: Object.values(meta).filter((m) => m.status === 'TRADING').length || null, problems: v.problems || [] };
+  return { readAt: v.at || null, coveredUntil: v.coveredUntil || null, finalUntil: v.finalUntil || null, latestHour: keys.length ? Math.max(...keys) : null, markets: v.markets || null, trading: Object.values(meta).filter((m) => m.status === 'TRADING').length || null, fees: v.fees ? { at: v.fees.at, tiers: v.fees.tiers.length, tradfi: Object.keys(v.fees.overrides).length } : null, problems: v.problems || [] };
 }
 
 // How far Bulk's hourly volume is complete for every market (older data: up to its last full read).
