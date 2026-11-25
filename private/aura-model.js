@@ -25,9 +25,13 @@
 //            loaded for those weeks, factors are measured at week 5's volume and the taker rate then
 //            follows this week's volume. Each past week is also predicted from the weeks before it
 //            only; how far those predictions missed sets the likely range.
-//            Bulk renamed its rules from week 9 ("mainnet-week9-rebates-over-fees-v1", then
+//            Bulk renamed its rules from week 8 ("mainnet-week8-rebates-over-fees-v1", then
 //            "mainnet-week11-manual-reviewed-v1") without publishing them: the formula's shape is
 //            still week 5's, and your factor follows what Bulk actually paid you in those weeks.
+//            Checked 25 Nov on a wallet that traded only crypto in weeks 5-7 and only stocks (1.5 bps
+//            fees) in weeks 9-10: at Bulk's volume, AURA per $ stayed the same (factor 1.13-1.25 vs
+//            1.14-1.22), and each week predicted from the ones before was within 9% (-6% to +9%).
+//            So stock volume still earns like crypto volume; the name doesn't mean fees decide it.
 // Arcus      Arcus splits a fixed 250,000 points a week by a score it doesn't publish (volume with
 //            boosts for stocks and off-hours, market making, deposits). What's measurable is how
 //            your points compared with your share of all volume on Arcus in weeks already paid:
@@ -212,7 +216,12 @@ function bulkEstimate({ view, fillsFor, bulkFor, open = 0, firstTs, now, nextDro
   if (mode === 'raw' && !ex) notes.push("Bulk's total volume isn't loaded yet, so this uses what Bulk paid you per dollar in your recent weeks. A quieter week pays more per dollar, a busier one less.");
   else if (mode === 'raw') notes.push("Bulk's volume for your earlier weeks isn't loaded yet, so the rate isn't adjusted for how busy Bulk is this week. It is once those weeks' volume is in.");
   if (mode === 'typical') notes.push(view ? 'No revealed week with your trading yet, so Bulk’s credit is the typical one. It sharpens after your first reveal.' : "Your AURA couldn't be read, so Bulk’s credit is the typical one. Paste your AURA on the Points page to use your own.");
-  if (last && last.newRules) notes.push(`Bulk used new rules (${last.ruleset}) in week ${last.week}; your rate follows what it paid you that week.`);
+  // Weeks you traded under rules Bulk hasn't published (week 8 on): how the estimate did on them.
+  const fresh = rows.filter((w) => w.newRules && w.credited > 0);
+  if (fresh.length) {
+    const hit = bt.filter((b) => fresh.some((w) => w.week === b.week));
+    notes.push(hit.length ? `Bulk has used new, unpublished rules since week 8. On your weeks under them the estimate was ${hit.map((b) => `${pct(b.err)} in week ${b.week}`).join(', ')}, and your rate keeps following what Bulk pays you.` : `Bulk has used new, unpublished rules since week 8; your rate follows what it paid you in week ${fresh[fresh.length - 1].week}.`);
+  }
   if (view && view.pendingWeeks && view.pendingWeeks.length) notes.push(`Week${view.pendingWeeks.length > 1 ? 's' : ''} ${view.pendingWeeks.join(', ')} ${view.pendingWeeks.length > 1 ? 'are' : 'is'} revealed but your AURA was read before ${view.pendingWeeks.length > 1 ? 'them' : 'it'}. Paste your AURA on the Points page to add ${view.pendingWeeks.length > 1 ? 'them' : 'it'} to the calibration.`);
   if (!bulkFor) notes.push('Your Bulk position history isn’t loaded, so open positions aren’t counted.');
 
