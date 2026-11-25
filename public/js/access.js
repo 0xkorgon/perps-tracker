@@ -82,7 +82,7 @@
             <div class="join-err" id="join-key-err" role="alert"></div>
           </form>
         </details>
-        <p class="join-foot">No invite yet? Ask on X: <a href="${esc(dev.x)}" target="_blank" rel="noopener noreferrer">${esc(dev.handle)}</a>, or run the free <a href="https://github.com/0xkorgon/perps-tracker" target="_blank" rel="noopener noreferrer">open-source version</a> on your own computer.</p>
+        <p class="join-foot">No invite yet? Ask on X: <a href="${esc(dev.x)}" target="_blank" rel="noopener noreferrer">${esc(dev.handle)}</a>, or run the full tracker on your own computer: it’s <a href="https://github.com/0xkorgon/perps-tracker" target="_blank" rel="noopener noreferrer">open source</a>, no invite needed.</p>
       </div>`;
     host.hidden = false;
     // Running on your own computer (--local): no invite needed.

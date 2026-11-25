@@ -2,8 +2,8 @@
 
 // The AURA model behind Bulk estimates, the Live page's hold multiplier and Strategy's Bulk habits.
 //
-//   private/aura-model.js  the developer's own model (its code stays on the server; its numbers,
-//                          rates and workings are shown in full on the dashboard)
+//   private/aura-model.js  the measured model (open source since 3.6.0; its numbers, rates and
+//                          workings are shown in full on the dashboard)
 //   src/model-public.js    the fallback: estimates from a wallet's own revealed weeks
 
 const path = require('path');

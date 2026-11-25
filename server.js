@@ -1235,11 +1235,54 @@ function openWorkspace(id) {
   return ws;
 }
 
+// Coming from 2.x (one dashboard per folder): its config.json next to server.js and its data folder
+// carry over into the first dashboard opened in local mode. Copied: the old files stay as they were.
+const V2_FIELDS = ['wallets', 'refreshSeconds', 'points', 'leagueRewards', 'arcusPointsName', 'alerts', 'profile', 'onboardedAt', 'tourDone', 'targets', 'disabled', 'bulkTargets', 'bulkDisabled', 'myCodes'];
+function v2Files() {
+  const cfg = path.join(ROOT, 'config.json');
+  const mark = path.join(DATA_DIR, 'v2-carried-over');
+  if (!OPEN || !fs.existsSync(cfg) || fs.existsSync(mark)) return null;
+  return { cfg, mark, data: path.join(ROOT, 'data') };
+}
+function carryOverV2(id) {
+  const v2 = v2Files();
+  if (!v2) return null;
+  const dir = path.join(USERS_DIR, id);
+  fs.mkdirSync(dir, { recursive: true });
+  let wallets = 0;
+  try {
+    for (const name of fs.existsSync(v2.data) ? fs.readdirSync(v2.data) : []) {
+      const from = path.join(v2.data, name);
+      if (!fs.statSync(from).isFile()) continue;
+      if (['points.json', 'balances.json', 'alerts.json'].includes(name)) fs.copyFileSync(from, path.join(dir, name));
+      else if (/^(bulk|arcus|entropy)_[A-Za-z0-9]+\.json$/.test(name)) {
+        const to = path.join(DATA_DIR, 'wallets', name);
+        fs.mkdirSync(path.dirname(to), { recursive: true });
+        if (!fs.existsSync(to)) fs.copyFileSync(from, to);
+        wallets += 1;
+      }
+    }
+  } catch (e) {
+    console.error(`  [!] Couldn't copy all of the 2.x data: ${e.message}`);
+  }
+  return { cfg: loadConfig(v2.cfg), raw: JSON.parse(fs.readFileSync(v2.cfg, 'utf8')), mark: v2.mark, wallets };
+}
 function createWorkspace(inviteCode) {
   const key = newKey();
   const id = idOf(key);
+  let old = null;
+  try {
+    old = carryOverV2(id);
+  } catch (e) {
+    console.error(`  [!] Couldn't read the 2.x config.json: ${e.message}`);
+  }
   const ws = new Workspace(id);
   ws.config.invite = inviteCode;
+  if (old) {
+    for (const k of V2_FIELDS) if (old.raw[k] !== undefined) ws.config[k] = old.cfg[k];
+    fs.writeFileSync(old.mark, `${new Date().toISOString()} -> ${id.slice(0, 8)}\n`);
+    console.log(`  Carried over your 2.x settings and data (${old.wallets} wallet histor${old.wallets === 1 ? 'y' : 'ies'}).`);
+  }
   ws.save();
   workspaces.set(id, ws);
   ws.recompute();

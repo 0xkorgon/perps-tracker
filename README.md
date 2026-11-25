@@ -37,6 +37,10 @@ Switch off the pages you don't use in **Settings → Display → Pages**.
 Your data stays in the `data` folder next to the code. Keep it when you update: download the new
 version, copy your `data` folder into it, and start it again.
 
+**Coming from 2.x?** Copy your old `config.json` and `data` folder into the new folder before you
+start it. The first dashboard you open carries over your wallets, settings, AURA and trade history
+(the old files stay as they were).
+
 ### Bulk AURA and referrals
 
 Bulk's AURA pages only answer real browsers, so the tracker can't read your AURA by itself. On the
