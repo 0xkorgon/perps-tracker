@@ -1,6 +1,7 @@
 'use strict';
 
 const { isUsHours } = require('./markettime');
+const markets = require('./markets');
 
 // Turns normalised fills / positions into the numbers the dashboard shows.
 //
@@ -352,7 +353,7 @@ function assetClass(exId, cache, mkt) {
     const c = cache.meta && cache.meta.classes ? cache.meta.classes[mkt] : null;
     return c === 'crypto' ? 'crypto' : 'stocks';
   }
-  if (exId === 'bulk') return 'crypto';
+  if (exId === 'bulk') return markets.bulkClass(mkt) === 'tradfi' ? 'stocks' : 'crypto'; // stocks, ETFs and indices trade on Bulk too
   const cat = cache.meta && cache.meta.categories ? cache.meta.categories[mkt] : null;
   if (cat) return cat === 'CRYPTO' ? 'crypto' : 'stocks';
   return 'crypto';

@@ -402,11 +402,14 @@
     const bulk = p.id === 'bulk';
     const unitBig = bulk ? 'trading AURA' : e.unit;
     const gx = bulk ? (e.extras || []).find((x2) => x2.kind === 'gauntlet') : null;
-    const others = (e.extras || []).filter((x2) => x2 !== gx);
+    // Referral AURA from your referrals' live volume, when you count it in estimates (Referrals page).
+    const rf = bulk && points.referral && points.referral.included && points.referral.aura != null ? points.referral : null;
+    const others = (e.extras || []).filter((x2) => x2 !== gx && !(rf && /^Referral AURA/.test(x2.label)));
     return `<article class="pu-est" data-prog="${p.id}" style="--c:${PT.COLOR[p.id]};--i:${i}">
       <div class="pu-est-h">${PT.exm(p.id)}<div><b>${esc(p.title)}</b><span>${esc(settled ? 'Week settled, waiting for the reveal' : `Drop ${PT.localWhen(e.dropAt)}`)}</span></div><span class="pu-cd" data-countdown="${e.dropAt}" data-done="Dropping now">${esc(PT.countdown(e.dropAt - Date.now()))}</span></div>
       <div class="pu-big"><span class="pu-approx">≈</span><b class="pu-val" data-count-to="${val}" data-unit="${esc(e.unit)}">${esc(amount(val, e.unit))}</b><small>${esc(unitBig)}</small><span class="pu-conf c-${e.confidence}">${esc(CONF[e.confidence])}</span></div>
       ${gx ? `<div class="pu-range" title="${esc(gx.label)}">+ about <b>${esc(amount(gx.value, e.unit))}</b> gauntlet AURA</div>` : ''}
+      ${rf ? `<div class="pu-range" title="${esc(`1 AURA for every 4 Trading AURA your referrals earn, from their ${compact(rf.volume)} of live volume this week (not projected)`)}">+ ≈ <b>${esc(amount(rf.aura, e.unit))}</b> referral AURA so far · ≈ <b class="pu-rtot" data-ref="${rf.aura}">${esc(amount(val + rf.aura, e.unit))}</b> in all</div>` : ''}
       <div class="pu-range">Likely <b class="pu-lo">${esc(amount(val * e.range.low, e.unit))}</b> to <b class="pu-hi">${esc(amount(val * e.range.high, e.unit))}</b>${bulk ? ' trading' : ` ${esc(e.unit)}`}</div>
       ${track(p, e)}
       <div class="pu-lock" title="Share already earned by what you've traded (and, on Bulk, the hours your positions have been open)"><span class="pu-lock-bar"><i class="done" style="--w:${(lockedShare * 100).toFixed(1)}%"></i></span><span><b class="pu-locked">${esc(amount(e.points.soFar, e.unit))}</b> earned so far${p.id === 'bulk' ? ` (${esc(compact(e.volume.soFar))} taker${e.fixedSoFar > 0.5 ? ' + open positions' : ''})` : ` by your ${esc(compact(e.volume.soFar))}`}</span></div>
@@ -431,10 +434,6 @@
     const withEst = points.programs.filter((p) => p.estimate);
     const missing = points.programs.filter((p) => !p.estimate && p.live);
     if (!withEst.length) {
-      // An older tracker (started before the update) doesn't work out estimates at all.
-      if (PT.outdated || !points.programs.some((p) => 'estimate' in p)) {
-        return empty('refresh', '<b>Restart the tracker to see estimates.</b><br>The black window is still running the version from before this update. Close it, then double-click <code>start.bat</code>.');
-      }
       if (!PT.hasWallets('bulk') && !PT.hasWallets('arcus')) {
         return empty('sparkles', 'Add a Bulk or Arcus wallet in Settings to see what your next drops should pay.', `<button class="btn btn-primary btn-sm" data-open-wallets data-close-pulse>${PT.icon('plus', 'sm')}Add wallet</button>`);
       }
@@ -463,6 +462,8 @@
     valEl.dataset.shown = val;
     $('.pu-lo', card).textContent = amount(val * e.range.low, e.unit);
     $('.pu-hi', card).textContent = amount(val * e.range.high, e.unit);
+    const rt = $('.pu-rtot', card);
+    if (rt) rt.textContent = amount(val + Number(rt.dataset.ref || 0), e.unit);
     $('.pu-x', card).textContent = compact(x);
     $('.pu-lock-bar i', card).style.setProperty('--w', `${(val > 0 ? Math.min(1, e.points.soFar / val) * 100 : 0).toFixed(1)}%`);
     $('[data-reset]', card).hidden = false;

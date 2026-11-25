@@ -1,6 +1,6 @@
 /* Live: every open trade right now, grouped by asset so a Bulk position sits with its hedge on
-   Entropy or Arcus. Hold times tick every second. With an AURA model that rates open positions
-   (official owner builds), Bulk legs also show their hold multiplier and what they earn this AURA
+   Entropy or Arcus. Hold times tick every second. With an AURA model that rates open positions,
+   Bulk legs also show their hold multiplier and what they earn this AURA
    week if closed now. Colour: each leg carries its exchange's colour. */
 (() => {
   'use strict';
@@ -63,7 +63,7 @@
       }
       tick();
     } catch (e) {
-      if (!data) $('#live-main').innerHTML = `<div class="panel"><div class="empty">${PT.icon('alert')}Couldn't read your open trades (${esc(e.message)}). Is the tracker's window still open?</div></div>`;
+      if (!data) $('#live-main').innerHTML = `<div class="panel"><div class="empty">${PT.icon('alert')}Couldn't read your open trades (${esc(e.message)}). Check your connection and try again.</div></div>`;
     } finally {
       loading = false;
     }
@@ -74,6 +74,7 @@
     const d = data;
     const parts = [];
     const auraMode = d.hasBulk;
+    if (!auraMode && PT.hasWallets('bulk')) parts.push(plainBoard(d));
     if (auraMode) {
       parts.push(board(d));
       const rs = ranges();
@@ -98,6 +99,21 @@
       ${PT.cell({ icon: 'layers', label: 'Open on Bulk', value: PT.count(n), sub: n ? `${usd(notional)} notional${hedgeText}` : 'Nothing open right now' })}
       <div class="cell"><span class="cell-l">${PT.icon('hourglass')}Multiplier now</span><span class="cell-v lv-ramp" id="lv-avg">–</span><span class="cell-s" id="lv-avg-s">Weighted by notional</span></div>
       <div class="cell"><span class="cell-l">${PT.icon('sparkles')}AURA if closed now</span><span class="cell-v lv-gold" id="lv-aura">–</span><span class="cell-s">${esc(`${(d.rate.base * 1000).toFixed(2)} per $1K taker + hours open`)}</span></div>
+      <div class="cell"><span class="cell-l">${PT.icon('clock')}AURA week ends in</span><span class="cell-v" id="lv-cut">–</span><span class="cell-s">${esc(PT.localWhen(d.cutoff))}</span></div>
+    </div></div>`;
+  }
+
+  // Without an AURA model for open positions: what's open and its PnL.
+  function plainBoard(d) {
+    const legsB = d.bulk || [];
+    const n = legsB.length;
+    const notional = legsB.reduce((a, l) => a + (l.notional || 0), 0);
+    const upnl = d.groups.reduce((a, g) => a + (Number.isFinite(g.upnl) ? g.upnl : 0), 0);
+    const all = d.groups.reduce((a, g) => a + g.longUsd + g.shortUsd, 0);
+    return `<div class="board"><div class="board-row even">
+      ${PT.cell({ icon: 'layers', label: 'Open on Bulk', value: PT.count(n), sub: n ? `${usd(notional)} notional` : 'Nothing open right now' })}
+      ${PT.cell({ icon: 'scale', label: 'Open everywhere', value: usd(all), sub: `${d.groups.length} asset${d.groups.length === 1 ? '' : 's'}` })}
+      ${PT.cell({ icon: 'trending', label: 'Unrealised PnL', value: PT.signed(upnl), cls: PT.pnlClass(upnl), sub: 'All open trades' })}
       <div class="cell"><span class="cell-l">${PT.icon('clock')}AURA week ends in</span><span class="cell-v" id="lv-cut">–</span><span class="cell-s">${esc(PT.localWhen(d.cutoff))}</span></div>
     </div></div>`;
   }

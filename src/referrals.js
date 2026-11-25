@@ -2,12 +2,14 @@
 
 // Referral codes and sign-up links.
 //
-//   ours   the developer's codes for each exchange and the other programs they recommend. This
-//          file is part of every signed release (security/manifest.json), so a copy with different
-//          codes shows as a modified, unofficial build.
-//   yours  codes you add yourself on the Referrals page, kept in config.json on this computer.
+//   ours   the developer's codes for each exchange, shown on the Referrals page, in the first-run
+//          setup and in Settings. They live on the server, so nobody using the site can change them.
+//   yours  codes you add yourself on the Referrals page, kept with your dashboard.
 //
 // A program with no code or link yet is shown as "coming soon".
+
+// The developer, for the follow button and the About links.
+const DEVELOPER = { name: 'Korgon', handle: '@Korgonxx', x: 'https://x.com/Korgonxx' };
 
 const OURS = [
   {
@@ -50,7 +52,8 @@ const ALL = [...OURS, ...MORE];
 const byId = (id) => ALL.find((p) => p.id === id) || null;
 const ready = (p) => Boolean(p && (p.code || p.link));
 
-// Your own codes, from the Referrals page: { id, program, code, link, note }.
+// Your own codes, from the Referrals page: { id, program, code, link, note }. Kept with your
+// dashboard on the server.
 const httpUrl = (u) => {
   const s = String(u == null ? '' : u).trim();
   return /^https?:\/\/[^\s"'<>]{3,300}$/i.test(s) ? s : '';
@@ -63,13 +66,14 @@ function cleanMine(list) {
     .slice(0, 50);
 }
 
-function view(config, extra = {}) {
+function view(config = {}, extra = {}) {
   return {
     ours: OURS.map((p) => ({ ...p, ready: ready(p) })),
     more: MORE.map((p) => ({ ...p, ready: ready(p) })),
+    developer: DEVELOPER,
     mine: cleanMine(config.myCodes),
     ...extra,
   };
 }
 
-module.exports = { OURS, MORE, byId, ready, cleanMine, view };
+module.exports = { OURS, MORE, DEVELOPER, byId, ready, cleanMine, view };

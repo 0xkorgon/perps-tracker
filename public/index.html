@@ -29,6 +29,7 @@
       <a href="#overview" data-view="overview"><i data-icon="overview"></i><span>Overview</span></a>
       <a href="#live" data-view="live"><i data-icon="activity"></i><span>Live</span></a>
       <a href="#strategy" data-view="strategy"><i data-icon="strategy"></i><span>Strategy</span></a>
+      <a href="#planner" data-view="planner"><i data-icon="calculator"></i><span>Planner</span></a>
       <a href="#fees" data-view="fees"><i data-icon="receipt"></i><span>Fees</span></a>
       <a href="#points" data-view="points"><i data-icon="star"></i><span>Points</span></a>
       <a href="#leagues" data-view="leagues"><i data-icon="trophy"></i><span>Leagues</span></a>
@@ -38,20 +39,17 @@
       <div id="sync" class="sync" aria-live="polite"></div>
       <button id="btn-refresh" class="icon-btn" title="Sync now" aria-label="Sync now"><i data-icon="refresh"></i></button>
       <button id="btn-tour" class="icon-btn" title="Take the tour" aria-label="Take the tour"><i data-icon="book"></i></button>
+      <a id="btn-gh" class="btn btn-ghost x-btn" href="https://github.com/0xkorgon/perps-tracker" target="_blank" rel="noopener noreferrer" title="Perps Tracker’s source code on GitHub" aria-label="Perps Tracker on GitHub"><i data-icon="branch" data-cls="sm"></i><span class="lbl">Open source</span></a>
       <a id="btn-x" class="btn btn-ghost x-btn" href="https://x.com/Korgonxx" target="_blank" rel="noopener noreferrer" title="Follow @Korgonxx on X for updates" aria-label="Follow @Korgonxx on X"><span class="x-mark" aria-hidden="true">𝕏</span><span class="lbl">Follow</span></a>
       <button id="btn-theme" class="icon-btn" title="Light or dark" aria-label="Switch between light and dark"><i data-icon="sun" data-cls="theme-sun"></i><i data-icon="moon" data-cls="theme-moon"></i></button>
       <button id="btn-wallets" class="btn btn-primary" aria-label="Settings"><i data-icon="settings"></i><span class="lbl">Settings</span></button>
     </div>
   </header>
 
-  <div class="update-bar" id="update-bar" role="status" hidden>
-    <i data-icon="refresh"></i>
-    <span><b>Restart the tracker to finish updating.</b> The black window is still running the old version, so some new numbers are missing. Close it, then double-click <code>start.bat</code>.</span>
-  </div>
-
-  <div class="official-bar" id="official-bar" role="status" hidden></div>
-
   <main class="wrap">
+    <!-- Invite code / private link (access.js) -->
+    <section id="join" class="join" hidden></section>
+
     <!-- First-run setup (onboarding.js) -->
     <section id="onboarding" class="onboard" hidden></section>
 
@@ -108,7 +106,7 @@
           <li><b>Average open interest</b> is your OI averaged over the range, time-weighted and valued at your fill prices.</li>
           <li><b>Hedges</b> group positions in the same asset across exchanges (NVDA-USD on Arcus and xyz:NVDA on Entropy count as NVDA, and an index perp priced like its ETF, such as mkts:US500 at SPY's price, joins SPY). Distance is how far the price has to move against a leg to reach its liquidation price. Bulk and Hyperliquid report liquidation prices; Arcus doesn't, so its price is estimated from the market's maintenance margin (marked ≈).</li>
           <li><b>Entropy</b> runs on Hyperliquid. Trades you place on entropy.io count on any market (Entropy tags its orders); trades from other apps on the same Hyperliquid account are left out.</li>
-          <li>Ranges are rolling. History is cached in the <code>data</code> folder, so it survives restarts and the exchanges' own history limits.</li>
+          <li>Ranges are rolling. History is kept with your dashboard on the tracker's server, so it survives the exchanges' own history limits.</li>
         </ul>
       </details>
     </section>
@@ -157,6 +155,17 @@
       </div>
     </section>
 
+    <!-- AURA Planner (experimental) -->
+    <section id="view-planner" data-view-panel="planner" hidden>
+      <div class="phead">
+        <div class="phead-title">
+          <span class="ptile"><i data-icon="calculator"></i></span>
+          <div><h1 class="pl-h1">AURA Planner <span class="chip exp">Experimental</span></h1><p>Price a Bulk trade before you open it: the trading AURA it should earn, what it costs in fees, and what it does to your league.</p></div>
+        </div>
+      </div>
+      <div class="stack" id="pl-main"></div>
+    </section>
+
     <!-- Fees -->
     <section id="view-fees" data-view-panel="fees" hidden>
       <div class="phead">
@@ -194,10 +203,20 @@
       <div class="phead">
         <div class="phead-title">
           <span class="ptile"><i data-icon="trophy"></i></span>
-          <div><h1>Leagues</h1><p>Bulk shares 12.5% of its net fees with the top trading leagues every AURA Saturday, starting 17 Oct.</p></div>
+          <div><h1>Leagues</h1><p>Bulk’s Challenger Series: every AURA Saturday from 17 Oct to 5 Dec, 12.5% of Bulk’s net fees goes to the top trading leagues, split by trading AURA.</p></div>
         </div>
       </div>
       <div class="stack" id="lg-main"></div>
+    </section>
+    <!-- Admin (access.js): invite codes, open from #admin -->
+    <section id="view-admin" data-view-panel="admin" hidden>
+      <div class="phead">
+        <div class="phead-title">
+          <span class="ptile"><i data-icon="shield"></i></span>
+          <div><h1>Admin</h1><p>Invite codes and who's using the tracker.</p></div>
+        </div>
+      </div>
+      <div class="stack" id="admin-main"></div>
     </section>
     <!-- Referrals -->
     <section id="view-referrals" data-view-panel="referrals" hidden>
@@ -232,12 +251,12 @@
           <div id="wallets-body"></div>
           <div class="wsec">
             <div class="wsec-head"><i data-icon="refresh"></i><h3>Sync</h3></div>
-            <label class="refresh-pick">Fetch new trades every
+            <label class="refresh-pick">While this dashboard is open, fetch new trades every
               <select id="refresh-seconds">
-                <option value="30">30 seconds</option>
                 <option value="60">1 minute</option>
                 <option value="120">2 minutes</option>
                 <option value="300">5 minutes</option>
+                <option value="600">10 minutes</option>
               </select>
             </label>
           </div>
@@ -250,7 +269,7 @@
           </div>
           <div class="wsec">
             <div class="wsec-head"><span data-exm="bulk"></span><h3>Bulk AURA</h3></div>
-            <p class="wsec-hint">Loaded automatically from Bulk's AURA page for your Bulk wallet: total, pre-deposit AURA, weekly trading AURA, leagues and the next reveal. Nothing to set up.</p>
+            <p class="wsec-hint">Read from Bulk's AURA page for your Bulk wallet: total, pre-deposit AURA, weekly trading AURA, leagues and the next reveal. Bulk's site only answers web browsers, so after each Saturday reveal use the one-click <b>Send AURA to tracker</b> bookmark from the Points page.</p>
           </div>
           <div class="wsec">
             <div class="wsec-head"><span data-exm="entropy"></span><h3>Entropy points</h3></div>
@@ -263,12 +282,12 @@
           <div id="system-body"></div>
           <div class="wsec">
             <div class="wsec-head"><i data-icon="download"></i><h3>Export your data</h3></div>
-            <p class="wsec-hint">Everything stays on this computer. Export a copy to keep as a backup or open in a spreadsheet.</p>
+            <p class="wsec-hint">Your dashboard's data is kept on the tracker's server, linked to your private key. Download a copy to keep or open in a spreadsheet.</p>
             <div class="export-list">
-              <a class="export" href="/api/export/all" download><i data-icon="layers"></i><span><b>Everything</b><span>Settings, wallets, every exchange's cached history, points and points logs, and the computed stats (JSON).</span></span><i data-icon="download" data-cls="sm"></i></a>
-              <a class="export" href="/api/export/trades.csv" download><i data-icon="table"></i><span><b>Trades</b><span>Every fill on every exchange: time, market, side, size, price, notional, fee, maker or taker, PnL (CSV).</span></span><i data-icon="download" data-cls="sm"></i></a>
-              <a class="export" href="/api/export/positions.csv" download><i data-icon="history"></i><span><b>Closed positions</b><span>Every position from open to close with its hold time and volume (CSV).</span></span><i data-icon="download" data-cls="sm"></i></a>
-              <a class="export" href="/api/export/points.csv" download><i data-icon="star"></i><span><b>Points</b><span>Bulk AURA per week (pre-deposit and mainnet), Arcus points per drop, and any totals you logged, with the fees behind them (CSV).</span></span><i data-icon="download" data-cls="sm"></i></a>
+              <button type="button" class="export" data-export="all"><i data-icon="layers"></i><span><b>Everything</b><span>Settings, wallets, every exchange's cached history, balances and the computed stats (JSON).</span></span><i data-icon="download" data-cls="sm"></i></button>
+              <button type="button" class="export" data-export="trades.csv"><i data-icon="table"></i><span><b>Trades</b><span>Every fill on every exchange: time, market, side, size, price, notional, fee, maker or taker, PnL (CSV).</span></span><i data-icon="download" data-cls="sm"></i></button>
+              <button type="button" class="export" data-export="positions.csv"><i data-icon="history"></i><span><b>Closed positions</b><span>Every position from open to close with its hold time and volume (CSV).</span></span><i data-icon="download" data-cls="sm"></i></button>
+              <button type="button" class="export" data-export="points.csv"><i data-icon="star"></i><span><b>Points</b><span>Bulk AURA per week (pre-deposit and mainnet), Arcus points per drop, and any totals you logged, with the fees behind them (CSV).</span></span><i data-icon="download" data-cls="sm"></i></button>
             </div>
           </div>
         </div>
@@ -283,12 +302,14 @@
     </form>
   </dialog>
 
+  <script src="config.js"></script>
   <script src="js/core.js"></script>
   <script src="js/icons.js"></script>
   <script src="js/charts.js"></script>
   <script src="js/overview.js"></script>
   <script src="js/live.js"></script>
   <script src="js/strategy.js"></script>
+  <script src="js/planner.js"></script>
   <script src="js/fees.js"></script>
   <script src="js/points.js"></script>
   <script src="js/leagues.js"></script>
@@ -299,6 +320,7 @@
   <script src="js/referrals.js"></script>
   <script src="js/onboarding.js"></script>
   <script src="js/tour.js"></script>
+  <script src="js/access.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

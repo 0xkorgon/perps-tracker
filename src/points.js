@@ -12,6 +12,7 @@
 // Entropy     no points program yet. Totals can be logged by hand until it launches.
 
 const fs = require('fs');
+const markets = require('./markets');
 const path = require('path');
 const { num, sleep } = require('./util');
 const { writeJsonAtomic } = require('./store');
@@ -362,9 +363,20 @@ async function syncArcus(http, name, st) {
 // All volume on Arcus per hour (every market added up), for the points estimate: your points
 // depend on your share of everyone's trading. Completed hours are kept; the last two are refreshed.
 // At most every 2 hours, one request per market.
+// Market-wide volume is the same for everyone: on the hosted server every dashboard shares one copy
+// (server.js), and only one download of it runs at a time.
+const volBusy = new WeakSet();
 async function syncArcusVolume(http, st) {
   const v = (st.arcusVol = st.arcusVol || { hours: {}, at: 0, finalUntil: 0 });
-  if (Date.now() - (v.at || 0) < 2 * HOUR) return;
+  if (Date.now() - (v.at || 0) < 2 * HOUR || volBusy.has(v)) return;
+  volBusy.add(v);
+  try {
+    await readArcusVolume(http, st, v);
+  } finally {
+    volBusy.delete(v);
+  }
+}
+async function readArcusVolume(http, st, v) {
   const meta = st.arcus && st.arcus.meta;
   const seasonStart = meta && meta.season ? Date.parse(meta.season.starts_at) : NaN;
   // Kept back to the season start (up to 120 days), so every paid week can calibrate the estimate.
@@ -434,6 +446,15 @@ function marketSymbols(info) {
 
 async function syncBulkVolume(http, st) {
   const v = (st.bulkVol = st.bulkVol || { hours: {}, at: 0, finalUntil: 0 });
+  if (volBusy.has(v)) return;
+  volBusy.add(v);
+  try {
+    await readBulkVolume(http, st, v);
+  } finally {
+    volBusy.delete(v);
+  }
+}
+async function readBulkVolume(http, st, v) {
   if (!v.sym) {
     // From the all-markets-at-once version: its last hours were still trading when it stopped.
     for (const t of Object.keys(v.hours || {})) if (Number(t) >= (v.finalUntil || 0)) delete v.hours[t];
@@ -442,20 +463,43 @@ async function syncBulkVolume(http, st) {
   }
   v.live = v.live || {};
   if (Date.now() - (v.at || 0) < 30 * 60000) return;
+  // TradFi markets' share (stocks, ETFs, indices: lower fees), kept from the first read that tracks it.
+  if (!v.trad) {
+    v.trad = {};
+    v.tradFrom = v.finalUntil || 0;
+  }
   const now = Date.now();
   const oldest = now - 50 * DAY;
   const final = Math.floor(now / HOUR) * HOUR - HOUR; // hours before this one won't change
   const info = await http.get(`${BULK_API}/exchangeInfo`, { retries: 2 });
+  // Bulk's fee state: which markets are TradFi (their own flat fee) and the crypto tiers.
+  try {
+    const fs = markets.parseFeeState(await http.get(`${BULK_API}/feeState`, { retries: 1 }));
+    if (fs) {
+      v.fees = fs;
+      markets.setFeeState(fs);
+    }
+  } catch {
+    // keep the last one (or the name list)
+  }
   const symbols = marketSymbols(info);
   if (!symbols.length) throw new Error('No markets in Bulk’s exchangeInfo');
+  // Each market's status (TRADING, or CLOSED and the like) and leverage, for the AURA Planner.
+  v.meta = {};
+  for (const m of Array.isArray(info) ? info : []) if (m && m.symbol) v.meta[m.symbol] = { status: m.status || null, maxLeverage: Number(m.maxLeverage) || null };
+  // Each market's own hourly volume for the last two weeks (gauntlets on some markets only). A market
+  // seen for the first time here is read back 8 days for it (into its own hours only).
+  v.bySym = v.bySym || {};
   // Markets new to the list start where the shared total had got to (older candles are already in it).
   const startFrom = Math.max(oldest, v.finalUntil || oldest);
   const problems = [];
   let okCount = 0;
   for (const sym of symbols) {
     const s = (v.sym[sym] = v.sym[sym] || { until: startFrom, fails: 0 });
-    let start = Math.max(oldest, s.until || startFrom);
+    const mainStart = Math.max(oldest, s.until || startFrom);
+    let start = v.bySym[sym] ? mainStart : Math.min(mainStart, now - 8 * DAY);
     const done = {}; // finished hours, added to the total only once this market has been read in full
+    const own = {}; // finished hours for this market's own record
     const live = {};
     try {
       for (let page = 0; page < 60 && start < now; page++) {
@@ -465,8 +509,10 @@ async function syncBulkVolume(http, st) {
         for (const k of list) {
           if (k.t < start) continue;
           const usd = k.v * ((k.o + k.c) / 2);
-          if (k.t < final) done[k.t] = usd;
-          else live[k.t] = Math.round(usd);
+          if (k.t < final) {
+            own[k.t] = Math.round(usd);
+            if (k.t >= mainStart) done[k.t] = usd;
+          } else live[k.t] = Math.round(usd);
         }
         const lastT = list.length ? Math.max(...list.map((k) => (Number.isFinite(k.T) && k.T > k.t ? k.T + 1 : k.t + HOUR))) : NaN;
         // Next request: after the last candle, or the next span if this one had none (quiet market).
@@ -475,6 +521,9 @@ async function syncBulkVolume(http, st) {
       }
       // Finished hours go into `hours`; only this market's unfinished ones stay in `live`.
       for (const [t, usd] of Object.entries(done)) v.hours[t] = Math.round((v.hours[t] || 0) + usd);
+      const mine = (v.bySym[sym] = v.bySym[sym] || {});
+      Object.assign(mine, own);
+      if (markets.bulkClass(sym) === 'tradfi') for (const [t, usd] of Object.entries(done)) if (Number(t) >= v.tradFrom) v.trad[t] = Math.round((v.trad[t] || 0) + usd);
       s.until = final;
       s.fails = 0;
       s.err = null;
@@ -493,7 +542,17 @@ async function syncBulkVolume(http, st) {
   for (const k of Object.keys(v.sym)) if (!symbols.includes(k)) delete v.sym[k];
   for (const k of Object.keys(v.live)) if (!symbols.includes(k)) delete v.live[k];
   for (const t of Object.keys(v.hours)) if (Number(t) < oldest) delete v.hours[t];
-  const counted = symbols.map((k) => v.sym[k]).filter((s) => !(s.bad && s.fails >= KLINE_FAIL_SKIP));
+  for (const t of Object.keys(v.trad)) if (Number(t) < oldest) delete v.trad[t];
+  for (const [sym, h] of Object.entries(v.bySym)) {
+    if (!symbols.includes(sym)) {
+      delete v.bySym[sym];
+      continue;
+    }
+    for (const t of Object.keys(h)) if (Number(t) < now - 15 * DAY) delete h[t];
+  }
+  // A market that keeps failing doesn't hold coverage back: "bad request" after 6 tries in a row, any
+  // other error (Bulk's API has answered one market with HTTP 500 for weeks) after 12 (about 6 hours).
+  const counted = symbols.map((k) => v.sym[k]).filter((s) => !((s.bad && s.fails >= KLINE_FAIL_SKIP) || s.fails >= KLINE_FAIL_SKIP * 2));
   v.coveredUntil = counted.length ? Math.min(...counted.map((s) => s.until || 0)) : 0;
   v.finalUntil = Math.max(v.finalUntil || 0, v.coveredUntil); // everything before this is in `hours` for every market
   v.markets = symbols.length;
@@ -516,6 +575,62 @@ function bulkHours(st) {
   for (const live of Object.values(v.live || {})) for (const [t, usd] of Object.entries(live || {})) out[t] = (out[t] || 0) + usd;
   return out;
 }
+// What share of Bulk's volume between `from` and `to` traded on TradFi markets (null until known).
+function bulkTradShare(st, from, to) {
+  const v = st && st.bulkVol;
+  if (!v || !v.trad) return null;
+  const lo = Math.max(from, v.tradFrom || 0);
+  let all = 0;
+  let trad = 0;
+  for (const [k, usd] of Object.entries(v.hours || {})) {
+    const t = Number(k);
+    if (t >= lo && t < to) {
+      all += usd;
+      trad += v.trad[k] || 0;
+    }
+  }
+  for (const [sym, live] of Object.entries(v.live || {})) {
+    const tf = markets.bulkClass(sym) === 'tradfi';
+    for (const [k, usd] of Object.entries(live || {})) {
+      const t = Number(k);
+      if (t >= from && t < to) {
+        all += usd;
+        if (tf) trad += usd;
+      }
+    }
+  }
+  return all > 0 ? { share: trad / all, volume: all, from: lo } : null;
+}
+// Bulk's markets, from the last market-volume read.
+function bulkSymbols(st) {
+  const v = st && st.bulkVol;
+  return v && v.sym ? Object.keys(v.sym).sort() : [];
+}
+// Each market's status and leverage ({ sym: { status, maxLeverage } }), from the last read.
+function bulkMarketMeta(st) {
+  const v = st && st.bulkVol;
+  return (v && v.meta) || {};
+}
+// Hourly volume of some Bulk markets only ({ hourTs: usd }): finished hours plus the hour in progress.
+function bulkSymHours(st, syms) {
+  const v = st && st.bulkVol;
+  const out = {};
+  if (!v) return out;
+  for (const sym of syms || []) {
+    for (const [t, usd] of Object.entries((v.bySym && v.bySym[sym]) || {})) out[t] = (out[t] || 0) + usd;
+    for (const [t, usd] of Object.entries((v.live && v.live[sym]) || {})) out[t] = (out[t] || 0) + usd;
+  }
+  return out;
+}
+// How the shared Bulk volume reads are going (health check; no wallet data).
+function bulkVolumeStatus(st) {
+  const v = st && st.bulkVol;
+  if (!v) return null;
+  const keys = Object.keys(v.hours || {}).map(Number);
+  const meta = v.meta || {};
+  return { readAt: v.at || null, coveredUntil: v.coveredUntil || null, finalUntil: v.finalUntil || null, latestHour: keys.length ? Math.max(...keys) : null, markets: v.markets || null, trading: Object.values(meta).filter((m) => m.status === 'TRADING').length || null, problems: v.problems || [] };
+}
+
 // How far Bulk's hourly volume is complete for every market (older data: up to its last full read).
 function bulkCoveredUntil(st) {
   const v = st && st.bulkVol;
@@ -951,4 +1066,4 @@ function recordEstimates(store, prepared, config) {
   store.save();
 }
 
-module.exports = { bulkActivity, bulkHours, bulkCoveredUntil, PROGRAMS, POINT_SERIES, PointsStore, syncPoints, computePoints, recordEstimates, nextDrops, nextBulkDrop, bulkPublishOf, latestBulkWeek, importBulk, jsonObjects, CHALLENGER_OFFSET, _test: { syncBulkVolume, klineRow, marketSymbols } };
+module.exports = { bulkActivity, bulkHours, bulkCoveredUntil, bulkTradShare, bulkSymbols, bulkMarketMeta, bulkSymHours, bulkVolumeStatus, PROGRAMS, POINT_SERIES, PointsStore, syncPoints, computePoints, recordEstimates, nextDrops, nextBulkDrop, bulkPublishOf, latestBulkWeek, importBulk, jsonObjects, CHALLENGER_OFFSET, _test: { syncBulkVolume, klineRow, marketSymbols } };

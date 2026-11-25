@@ -14,6 +14,7 @@
     ['overview', 'Overview'],
     ['live', 'Live'],
     ['strategy', 'Strategy'],
+    ['planner', 'AURA Planner'],
     ['fees', 'Fees'],
     ['points', 'Points'],
     ['leagues', 'Leagues'],

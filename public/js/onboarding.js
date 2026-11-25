@@ -17,7 +17,7 @@
     { id: 'aura', icon: 'star', title: 'Farm Bulk AURA', sub: 'Weekly AURA estimate, leagues, previous weeks' },
     { id: 'arcus', icon: 'sparkles', title: 'Farm Arcus points', sub: 'The points routine checklist and drops' },
     { id: 'hedge', icon: 'scale', title: 'Hedge across exchanges', sub: 'Hedges grouped by asset, funding, broken-hedge alerts' },
-    { id: 'alerts', icon: 'alert', title: 'Liquidation alerts', sub: 'Pop-ups before a leg gets close' },
+    { id: 'alerts', icon: 'alert', title: 'Liquidation alerts', sub: 'Alerts before a leg gets close' },
     { id: 'fees', icon: 'receipt', title: 'Track volume & fees', sub: 'Fees, tiers and maker/taker split' },
   ];
   const STEPS = ['welcome', 'exchanges', 'goals', 'wallets', 'ready'];
@@ -40,7 +40,7 @@
     if (step === 'welcome') {
       return `<p class="ob-kicker">Welcome</p>
         <h1>Every perp you trade, in one place.</h1>
-        <p class="ob-lede">Volume, open interest, hedges, fees and points across Bulk, Arcus and Entropy. The tracker reads each exchange's public data with your wallet address and keeps everything on this computer. No keys, no signing.</p>
+        <p class="ob-lede">Volume, open interest, hedges, fees and points across Bulk, Arcus and Entropy. The tracker reads each exchange's public data with your public wallet address. No keys, no signing, nothing it can move.</p>
         <label class="ob-field"><span>What should we call you?</span><input type="text" id="ob-name" maxlength="30" placeholder="Your name or handle" value="${esc(st.name)}" autocomplete="nickname"></label>
         ${nav('Get started', { back: false })}`;
     }
@@ -82,7 +82,7 @@
     }
     // ready
     const pages = pagesFor();
-    const names = { overview: 'Overview', live: 'Live', strategy: 'Strategy', fees: 'Fees', points: 'Points', leagues: 'Leagues', referrals: 'Referrals' };
+    const names = { overview: 'Overview', live: 'Live', strategy: 'Strategy', planner: 'Planner', fees: 'Fees', points: 'Points', leagues: 'Leagues', referrals: 'Referrals' };
     return `<p class="ob-kicker">All set${st.name ? `, ${esc(st.name)}` : ''}</p>
       <h2>Your dashboard is ready.</h2>
       <p class="ob-lede">The first sync takes a minute or two for a busy account.</p>
@@ -101,6 +101,7 @@
     const ex = new Set(st.exchanges);
     const on = ['overview', 'live'];
     if (g.has('aura') || g.has('arcus') || !g.size) on.push('strategy');
+    if (g.has('aura') || !g.size) on.push('planner');
     if (g.has('fees') || !g.size) on.push('fees');
     if (g.has('aura') || g.has('arcus') || ex.has('bulk') || ex.has('arcus')) on.push('points');
     if (ex.has('bulk') && (g.has('aura') || !g.size)) on.push('leagues');

@@ -1,10 +1,9 @@
-config.json
-config.json.broken-*
-data/
 node_modules/
-
-# never published: the signing key, the private model and notes, build output
-private/
-release/
-*.txt
-!public/fonts/LICENSE.txt
+data/
+config.json
+*.log
+*.pem
+*.key
+.env
+.DS_Store
+Thumbs.db

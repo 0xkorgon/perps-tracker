@@ -10,17 +10,18 @@
 
   // view: the page to open first; sel: what to light up; title/body: what to say.
   const STEPS = [
-    { sel: '.dock', title: 'Your pages', body: 'Overview, Live, Strategy, Fees, Points, Leagues and Referrals. Switch off the ones you don’t use in Settings → Display.' },
-    { sel: '#sync', title: 'Always in sync', body: 'The tracker reads each exchange’s public data every few minutes. This shows the last sync; the arrow next to it syncs now.' },
+    { sel: '.dock', title: 'Your pages', body: 'Overview, Live, Strategy, Planner, Fees, Points, Leagues and Referrals. Switch off the ones you don’t use in Settings → Display.' },
+    { sel: '#sync', title: 'Always in sync', body: 'While your dashboard is open, the tracker reads each exchange’s public data every couple of minutes. This shows the last sync; the arrow next to it syncs now.' },
     { view: 'overview', sel: '#view-overview .phead', title: 'Overview', body: 'Volume, open interest and hold time per exchange, your hedges grouped by asset, and how far each leg is from liquidation.' },
     { view: 'live', sel: '#view-live .phead', title: 'Live', body: 'Every open position ticking in real time, a hedge’s legs together, with PnL and funding right now.' },
-    { view: 'strategy', sel: '#view-strategy .phead', title: 'Strategy', body: 'Pick one exchange or several. The checklist turns green as your trading matches the habits that earn points.' },
     { view: 'points', sel: '#view-points .phead', title: 'Points', body: 'Bulk AURA and Arcus points, the next drops, what this week is on course for, and every previous week side by side.' },
+    { view: 'strategy', sel: '#view-strategy .phead', title: 'Strategy', body: 'Pick one exchange or several. The checklist turns green as your trading matches the habits that earn points.' },
+    { view: 'planner', sel: '#view-planner .phead', title: 'AURA Planner', body: 'Experimental: pick a Bulk market, a size, how you open and close and how long you hold, and see the AURA it should earn and what it costs.' },
     { view: 'referrals', sel: '#view-referrals .phead', title: 'Referrals & codes', body: 'Sign up on an exchange with the developer’s codes, and keep your own referral codes ready to share.' },
     { sel: '#pulse-fab', title: 'Pulse', body: 'A quick view from any page: your balance, open positions, this week’s habits and the next drop estimate.' },
     { sel: '#ticker', title: 'Status bar', body: 'Clocks, the US session, countdowns to the next drops, and a warning on every page when a leg nears liquidation.' },
     { sel: '#btn-x', title: 'Follow for updates', body: 'The tracker is made by @Korgonxx. Follow on X for updates, new features and what’s coming next.' },
-    { sel: '#btn-wallets', title: 'Settings', body: 'Wallets, alerts, display, and System: the security check and whether this copy is an official, signed build.' },
+    { sel: '#btn-wallets', title: 'Settings', body: 'Wallets, alerts, display, exports, and System: your private link for opening this dashboard on another device.' },
   ];
 
   let i = 0;

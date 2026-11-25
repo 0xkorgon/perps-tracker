@@ -1,5 +1,5 @@
 /* Alerts in the dashboard: a card in the top-right corner for each new alert, with a sound while
-   the page is open and visible (the tracker's own pop-up stays quiet then, so you hear it once).
+   the page is open and visible, and a browser notification while it's open in the background.
    Sounds are synthesised (Web Audio), so there are no files to load:
      warn    a soft two-note chime
      danger  three urgent beeps, twice
@@ -109,8 +109,33 @@
     }
     if (!fresh.length) return;
     for (const a of fresh.slice(-3)) card(a);
+    if (al.settings && al.settings.desktop && document.visibilityState !== 'visible') for (const a of fresh.slice(-3)) notify(a);
     const loudest = fresh.some((a) => a.level === 'danger' && !a.quiet) ? 'danger' : fresh.some((a) => a.level === 'warn' && !a.quiet) ? 'warn' : null;
     if (loudest && al.settings && al.settings.sound && document.visibilityState === 'visible' && canPlay()) play(loudest);
+  }
+
+  // ---------- browser notifications (while the dashboard is open in another tab) ----------
+  const canNotify = () => 'Notification' in window;
+  function notify(a) {
+    if (!canNotify() || Notification.permission !== 'granted') return;
+    try {
+      const n = new Notification(a.title, { body: a.body || '', tag: a.id || String(a.at), requireInteraction: a.level === 'danger' });
+      n.onclick = () => {
+        window.focus();
+        n.close();
+      };
+    } catch {
+      // some browsers only allow notifications from a service worker
+    }
+  }
+  async function askPermission() {
+    if (!canNotify()) return 'unsupported';
+    if (Notification.permission !== 'default') return Notification.permission;
+    try {
+      return await Notification.requestPermission();
+    } catch {
+      return Notification.permission;
+    }
   }
 
   // ---------- Settings → Alerts ----------
@@ -118,7 +143,7 @@
   function settingsPanel(state) {
     const s = (state && state.alerts && state.alerts.settings) || {};
     const recent = (state && state.alerts && state.alerts.recent) || [];
-    const err = state && state.alerts && state.alerts.desktopError;
+    const perm = canNotify() ? Notification.permission : 'unsupported';
     const toggle = (k, title, hint) => `<label class="al-opt"><input type="checkbox" class="toggle" data-al="${k}"${s[k] ? ' checked' : ''}><span><b>${esc(title)}</b><span>${esc(hint)}</span></span></label>`;
     return `
       <div class="wsec">
@@ -127,19 +152,21 @@
         <div class="al-dist"><label>Warning at <input type="number" min="1" max="50" step="0.5" data-al-pct="liqWarn" value="${pctIn(s.liqWarn || 0.1)}"> %</label><label>Danger at <input type="number" min="0.5" max="30" step="0.5" data-al-pct="liqDanger" value="${pctIn(s.liqDanger || 0.05)}"> %</label><span>from the liquidation price</span></div>
         ${toggle('hedges', 'A hedge breaking', 'One side closes, is liquidated or hits a TP/SL, or long and short stop matching.')}
         ${toggle('liquidations', 'A liquidation', 'Any position liquidated on any exchange.')}
-        ${toggle('cutoff', 'AURA week about to end', 'An hour before Saturday’s cutoff: what each open Bulk position has earned this week and earns a day while open.')}
+        ${toggle('cutoff', 'AURA week about to end', 'An hour before Saturday’s 12:30 UTC cutoff: what each open Bulk position has earned this week and earns a day while open.')}
         ${PT.holdKnown() ? `<label class="al-opt al-sel"><span class="al-sel-ic">${PT.icon('hourglass', 'sm')}</span><span><b>Bulk multiplier milestones</b><span>When a position reaches its next multiplier.</span></span><select class="select sm" data-al-sel="milestones"><option value="daily"${s.milestones === 'daily' || !s.milestones ? ' selected' : ''}>Every day held</option><option value="full"${s.milestones === 'full' ? ' selected' : ''}>Only at a week held</option><option value="off"${s.milestones === 'off' ? ' selected' : ''}>Off</option></select></label>` : ''}
       </div>
       <div class="wsec">
         <div class="wsec-head"><i data-icon="zap"></i><h3>How</h3></div>
-        ${toggle('desktop', 'Windows pop-up', 'From the tracker itself, so it reaches you with the browser closed. Danger pop-ups stay until dismissed.')}
-        ${toggle('sound', 'Sounds', 'An alarm for danger, a chime for warnings. With the dashboard open the page plays it; otherwise the pop-up does.')}
-        ${err && s.desktop ? `<div class="alert flat">${PT.icon('alert')}<span>Pop-ups aren't showing on this computer: ${esc(err)}. Alerts still appear here and in the tracker's window.</span></div>` : ''}
+        ${toggle('desktop', 'Browser notifications', 'While the dashboard is open in a background tab. Danger notifications stay until dismissed.')}
+        ${toggle('sound', 'Sounds', 'An alarm for danger, a chime for warnings, while the dashboard is open.')}
+        ${s.desktop && perm === 'denied' ? `<div class="alert flat">${PT.icon('alert')}<span>This browser is blocking notifications from the tracker. Allow them in the site settings (the icon left of the address), or rely on the cards and sounds.</span></div>` : ''}
+        ${s.desktop && perm === 'unsupported' ? `<div class="alert flat">${PT.icon('alert')}<span>This browser can't show notifications. Alerts still appear here with a sound.</span></div>` : ''}
+        <p class="wsec-hint">Alerts are checked while your dashboard is open somewhere. With every tab closed, nothing is checked.</p>
         <div class="al-tests">
           <span>Hear them:</span>
           <button type="button" class="btn btn-sm" data-al-play="warn">${PT.icon('zap', 'sm')}Warning sound</button>
           <button type="button" class="btn btn-sm" data-al-play="danger">${PT.icon('alert', 'sm')}Danger sound</button>
-          <button type="button" class="btn btn-sm" data-al-test="desktop">${PT.icon('external', 'sm')}Test pop-up</button>
+          <button type="button" class="btn btn-sm" data-al-test="danger">${PT.icon('external', 'sm')}Send a test alert</button>
         </div>
         <div class="al-test-msg" data-al-msg></div>
       </div>
@@ -168,14 +195,24 @@
 
   function wire(root) {
     $$('[data-al-play]', root).forEach((b) => (b.onclick = () => play(b.dataset.alPlay)));
+    const dt = $('[data-al="desktop"]', root);
+    if (dt)
+      dt.addEventListener('change', async () => {
+        if (!dt.checked) return;
+        const p = await askPermission();
+        const msg = $('[data-al-msg]', root);
+        if (msg && p === 'denied') msg.textContent = 'Notifications are blocked for this site in your browser settings.';
+      });
     $$('[data-al-test]', root).forEach((b) => {
       b.onclick = async () => {
         const msg = $('[data-al-msg]', root);
         b.disabled = true;
         msg.textContent = 'Sending…';
         try {
-          const r = await PT.post('/api/alerts/test', { level: 'danger', where: 'desktop' });
-          msg.textContent = r.ok ? 'Sent. You should see a pop-up in the corner of your screen and hear the alarm.' : `The pop-up didn't show: ${r.error}`;
+          if ($('[data-al="desktop"]', root) && $('[data-al="desktop"]', root).checked) await askPermission();
+          await PT.post('/api/alerts/test', { level: 'danger' });
+          msg.textContent = 'Sent. It shows up here in a few seconds, with the alarm if sounds are on.';
+          setTimeout(() => PT.refresh && PT.refresh(), 800);
         } catch (e) {
           msg.textContent = e.message;
         } finally {

@@ -83,11 +83,12 @@
       <details class="panel howto">
         <summary>${PT.icon('book')}Where these numbers come from${PT.icon('chevron', 'chev')}</summary>
         <ul>
-          <li><b>Bulk AURA</b> is read from Bulk's public AURA data for your Bulk wallet: your total, AURA per pre-deposit week, trading and referral AURA per mainnet week, your leagues, and each week's reveal time. Bulk settles a week on Saturday at 12:30 UTC and reveals it at 13:00 UTC. When Bulk's website turns away automatic requests (it sometimes only answers web browsers), the tracker backs off and you can paste the same data in from your browser.</li>
+          <li><b>Bulk AURA</b> is read from Bulk's public AURA data for your Bulk wallet: your total, AURA per pre-deposit week, trading and referral AURA per mainnet week, your leagues, and each week's reveal time. Bulk settles a week on Saturday at 12:30 UTC and reveals it at 13:00 UTC. Bulk's website only answers web browsers, so after each reveal the one-click bookmark sends it from your browser.</li>
           <li><b>Arcus points</b> come from Arcus's public points leaderboard. Arcus only shows your own points when you're logged in, so the tracker finds you by your points name (set it in Settings, Points). Arcus hands out 250,000 points a week, on Wednesdays at 3 PM New York time.</li>
           <li><b>Each week's volume</b> on Bulk is shown twice when that week's results are loaded: as Bulk counted it for AURA, and from your own fills in that week's window. Fees and taker volume are always from your fills.</li>
           <li><b>Gauntlet AURA</b> is what Bulk pays in its Challenger Series (season 1 started with the week from Saturday 17 October), listed by challenger week. Challenger week 1 is mainnet week 7, so each one shows in the mainnet week it was earned.</li>
           <li><b>Previous weeks</b> are filled in from your AURA total even when that week's results weren't pasted: each shows what Bulk paid, your taker volume and fees, and what the estimate gives for it from the weeks before it only. A week revealed after your AURA was last read shows as not loaded yet.</li>
+          <li><b>Estimates</b> for the next drops are worked out on the tracker's server from your trading and the drops you've been paid, and every estimate shows how it's worked out. They're estimates, not promises: each is checked against your past drops, shown as the Model column.</li>
           <li><b>Fees per 1,000</b> is the trading fees you paid in a period divided by the points earned for trading in it, so you can compare what a point costs on each exchange.</li>
           <li><b>Entropy</b> hasn't launched points yet. Your Entropy trading is recorded from your first trade, and the page fills in as soon as there's a program to read.</li>
         </ul>
@@ -197,6 +198,27 @@
   }
 
   // ---------- Bulk ----------
+  // This week's gauntlet (set on the admin page) and your estimated share of it.
+  function gauntletNow(g) {
+    if (!g || !g.set) return '';
+    const where = g.goal === 'markets' ? `taker volume on ${g.markets.map((m) => m.replace(/-USD$/, '')).join(', ')}` : g.goal === 'taker' ? 'taker volume on every market' : 'a goal the tracker can’t measure';
+    const cal = g.calibration && g.calibration.checks && Math.abs(g.calibration.factor - 1) >= 0.02 ? `, scaled ×${g.calibration.factor.toFixed(2)} by past results` : '';
+    const est = g.measurable && g.totalKnown && g.aura ? `≈ ${pts(g.aura.projected)} AURA for you at your pace (≈ ${pts(g.aura.soFar)} so far${cal})` : g.measurable ? 'Your share shows once Bulk’s volume is in' : 'Not estimated: it shows here after the reveal';
+    return `<div class="panel pad"><div class="alert flat">${PT.icon('trophy')}<span><b>${esc(`This week’s gauntlet: ${g.title}`)}</b>. ${esc(`${where.charAt(0).toUpperCase() + where.slice(1)}, ${g.reward.toLocaleString('en-US')} AURA split by results. ${est}. Gauntlet AURA counts toward your league.`)}</span></div></div>`;
+  }
+
+  // Referral AURA this week (Referrals page): your referrals' live volume and the AURA it should earn.
+  function referralNow(r) {
+    if (!r || (!r.wallets && !r.included)) return '';
+    const go = '<a href="#referrals">Referrals</a>';
+    let text;
+    if (!r.wallets) text = `Referral AURA counts in your estimates, but no referral wallets are watched yet: add them on ${go}.`;
+    else if (r.aura == null) text = `Your referrals’ volume this week: ${esc(compact(r.volume))}. Referral AURA shows once the rates are in.`;
+    else if (r.included) text = `Referral AURA counts in your estimates: ≈ <b>${esc(pts(r.aura))}</b> so far, from ${esc(compact(r.volume))} of your referrals’ live volume this week (1 AURA per 4 Trading AURA they earn). Change it on ${go}.`;
+    else text = `Your referrals have traded ${esc(compact(r.volume))} this week: ≈ <b>${esc(pts(r.aura))}</b> referral AURA so far, not counted in your estimates. Turn it on on ${go}.`;
+    return `<div class="panel pad"><div class="alert flat">${PT.icon('gift')}<span>${text}</span></div></div>`;
+  }
+
   function bulkSection(p) {
     const d = p.data;
     if (!p.hasWallet) return `${sectionHead(p)}<div class="panel"><div class="venue-empty" style="padding:22px">${PT.icon('wallet', 'lg')}<div>Add your Bulk wallet and your AURA loads here automatically.</div><button class="btn btn-primary btn-sm" data-open-wallets>${PT.icon('plus', 'sm')}Add wallet</button></div></div>`;
@@ -255,6 +277,8 @@
       : '';
     return `${sectionHead(p, chips)}
       ${notice}
+      ${gauntletNow(data && data.gauntlet)}
+      ${referralNow(data && data.referral)}
       <div class="grid g3">
         <section class="panel">
           ${panelHead('star', 'Your AURA', d.rank ? `Rank ${count(d.rank)} on Bulk${d.wallets > 1 ? `, ${d.wallets} wallets added up` : ''}` : null)}
@@ -366,6 +390,7 @@
         <ol class="steps">
           <li><span><b>Once:</b> drag this button to your bookmarks bar (press <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>B</kbd> if you don't see the bar):</span><div class="paste-links"><a class="btn btn-primary btn-sm bm-link" href="${esc(bm)}" data-bookmarklet title="Drag me to your bookmarks bar">${PT.icon('star', 'sm')}Send AURA to tracker</a></div></li>
           <li><span><b>After each Saturday reveal:</b> open <a href="https://app.bulk.trade" target="_blank" rel="noopener noreferrer">app.bulk.trade</a> and click the bookmark. A tab opens here and asks to import.</span></li>
+          <li><span><b>Referrals:</b> click it on Bulk’s <a href="https://app.bulk.trade/referrals" target="_blank" rel="noopener noreferrer">Referrals page</a> while logged in and it also brings the wallets you referred, for your live referral volume and AURA. Dragged the bookmark before 3.6? Drag it again once.</span></li>
         </ol>
         ${msg}
       </div>
@@ -390,7 +415,7 @@
   // A bookmark that runs on app.bulk.trade (where your browser is let in): it reads your AURA and
   // the last eight weeks' results for your Bulk wallets, then opens the tracker with them.
   function bookmarklet(addresses) {
-    const code = `(async()=>{const A=${JSON.stringify(addresses)},T=${JSON.stringify(location.origin)};if(location.hostname!=='app.bulk.trade'){alert('Open app.bulk.trade first, then click this bookmark again.');location.href='https://app.bulk.trade';return}const B='/api/aura/v1/aura',L=Math.floor((Date.now()-Date.UTC(2026,8,26,13))/6048e5)+3,g=u=>fetch(B+u,{credentials:'include'}).then(r=>r.ok?r.json():null).catch(()=>null),o=[];for(const a of A){const w=await g('/wallet/'+a);if(w)o.push(w);for(let n=Math.max(1,L-7);n<=L;n++){const k=await g('/mainnet/weekly/'+n+'/wallet/'+a);if(k&&k.week_index!=null)o.push(k)}}if(!o.length){alert('Bulk did not send your AURA. Reload app.bulk.trade and try again.');return}if(!window.open(T+'/#bulk-import='+encodeURIComponent(JSON.stringify(o)),'_blank'))alert('Allow pop-ups for app.bulk.trade, then click the bookmark again.')})()`;
+    const code = `(async()=>{const A=${JSON.stringify(addresses)},T=${JSON.stringify(location.origin)};if(location.hostname!=='app.bulk.trade'){alert('Open app.bulk.trade first, then click this bookmark again.');location.href='https://app.bulk.trade';return}const B='/api/aura/v1/aura',L=Math.floor((Date.now()-Date.UTC(2026,8,26,13))/6048e5)+3,g=u=>fetch(B+u,{credentials:'include'}).then(r=>r.ok?r.json():null).catch(()=>null),o=[],S=/^[1-9A-HJ-NP-Za-km-z]{32,44}$/,R=new Map(),own=new Set(A),add=(w,v)=>{if(typeof w==='string'&&S.test(w)&&!own.has(w)&&!R.has(w))R.set(w,{wallet:w,volume:Number(v)||0})},scan=()=>{for(const el of document.querySelectorAll('body *')){const k=Object.keys(el).find(x=>x.startsWith('__reactFiber$'));if(!k)continue;let f=el[k];for(let d=0;f&&d<4;d++,f=f.return){const p=f.memoizedProps;if(!p||typeof p!=='object')continue;if(p.trader)add(p.trader,p.totalVolume);if(p.row&&p.row.trader)add(p.row.trader,p.row.totalVolume);for(const v of Object.values(p))if(Array.isArray(v))for(const x of v)if(x&&typeof x==='object'&&typeof x.trader==='string')add(x.trader,x.totalVolume)}}};if(location.pathname.startsWith('/referrals')){for(let i=0;i<8&&!R.size;i++){scan();if(!R.size)await new Promise(r=>setTimeout(r,500))}}for(const a of A){const w=await g('/wallet/'+a);if(w)o.push(w);for(let n=Math.max(1,L-7);n<=L;n++){const k=await g('/mainnet/weekly/'+n+'/wallet/'+a);if(k&&k.week_index!=null)o.push(k)}}if(R.size)o.push({kind:'perps-referees',list:[...R.values()]});if(!o.length){alert('Bulk did not send your AURA. Reload app.bulk.trade and try again.');return}if(!window.open(T+'/#bulk-import='+encodeURIComponent(JSON.stringify(o)),'_blank'))alert('Allow pop-ups for app.bulk.trade, then click the bookmark again.')})()`;
     return `javascript:${encodeURIComponent(code)}`;
   }
 
@@ -433,8 +458,9 @@
         <td class="num">${esc(Number.isFinite(w.feesPer1k) ? money(w.feesPer1k, { dp: 2 }) : '–')}</td>
       </tr>`;
     };
-    // The week being traded now, with what it's on course for.
+    // The week being traded now, with what it's on course for (and referral AURA, if counted).
     const c = d.current;
+    const refIn = data && data.referral && data.referral.included && data.referral.aura != null ? data.referral : null;
     const now =
       c && e && !e.window.settled
         ? `<tr>
@@ -443,7 +469,11 @@
         <td class="mono">${esc(PT.localWhen(c.end + 30 * 60000))}</td>
         <td class="num" title="Earned so far by your taker volume and open hours">${esc(pts(e.points.soFar))}<span class="muted"> so far</span></td>
         <td class="num" title="${esc(`Likely ${pts(e.points.low)} to ${pts(e.points.high)}`)}">≈ ${esc(pts(e.points.projected))}</td>
-        <td class="num">${dash}</td><td class="num">${dash}</td><td class="num">${dash}</td><td class="num">${dash}</td>
+        <td class="num">${dash}</td><td class="num">${dash}</td>${
+          refIn
+            ? `<td class="num" title="So far, from your referrals’ live volume">≈ ${esc(pts(refIn.aura))}</td><td class="num" title="Trading AURA at your pace plus referral AURA so far">≈ ${esc(pts(e.points.projected + refIn.aura))}</td>`
+            : `<td class="num">${dash}</td><td class="num">${dash}</td>`
+        }
         <td class="num">${esc(c.taker == null ? '–' : money(c.taker, { dp: 0 }))}</td>
         <td class="num">${esc(money(c.volume, { dp: 0 }))}</td>
         <td class="num">${esc(money(c.fees, { dp: 2 }))}</td>

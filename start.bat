@@ -26,5 +26,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-node server.js %*
+rem Open the dashboard in your browser once the server is up.
+start "" /b cmd /c "timeout /t 3 /nobreak >nul & start "" http://localhost:8787"
+node server.js --local %*
 if errorlevel 1 pause

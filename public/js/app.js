@@ -9,13 +9,14 @@
     arcus: { re: /^0x[0-9a-fA-F]{40}$/, placeholder: '0x… address', bad: 'Arcus needs a 0x… address (42 characters).' },
     entropy: { re: /^0x[0-9a-fA-F]{40}$/, placeholder: '0x… address', bad: 'Entropy needs a 0x… address (your Hyperliquid account).' },
   };
-  const VIEWS = ['overview', 'live', 'strategy', 'fees', 'points', 'leagues', 'referrals'];
-  const TITLES = { overview: 'Overview', live: 'Live', strategy: 'Strategy', fees: 'Fees', points: 'Points', leagues: 'Leagues', referrals: 'Referrals' };
+  const VIEWS = ['overview', 'live', 'strategy', 'planner', 'fees', 'points', 'leagues', 'referrals'];
+  const TITLES = { overview: 'Overview', live: 'Live', strategy: 'Strategy', planner: 'AURA Planner', fees: 'Fees', points: 'Points', leagues: 'Leagues', referrals: 'Referrals', admin: 'Admin' };
   // Pages you've switched off in Settings > Display are left out of the menu and skipped.
   const shown = () => VIEWS.filter((v) => PT.display.pageOn(v));
   const ALIASES = { playbook: 'strategy', tips: 'strategy' };
 
   PT.hydrateLogos();
+  PT.access.boot(); // a private link (#k=…) in the address
 
   let offline = false;
   let pollTimer = null;
@@ -32,6 +33,7 @@
 
   const currentView = () => {
     const h = location.hash.replace('#', '');
+    if (h === 'admin') return 'admin';
     if (ALIASES[h]) {
       history.replaceState(null, '', `#${ALIASES[h]}`);
       return ALIASES[h];
@@ -43,12 +45,20 @@
   // ---------- polling ----------
   async function refresh() {
     const prevVersion = PT.dataVersion();
-    try {
-      // sound=1: this page is visible and allowed to play sounds, so the tracker's pop-up can stay quiet.
-      PT.state = await PT.getJSON(`/api/state?sound=${document.visibilityState === 'visible' && PT.alerts && PT.alerts.canPlay() ? 1 : 0}`);
+    clearTimeout(pollTimer);
+    if (!PT.key()) {
+      // No dashboard in this browser yet: the invite screen (or the admin page).
+      PT.state = null;
       offline = false;
-    } catch {
-      offline = true;
+      renderShell();
+      return;
+    }
+    try {
+      PT.state = await PT.getJSON('/api/state');
+      offline = false;
+    } catch (e) {
+      offline = e.status !== 401;
+      if (e.status === 401) return renderShell();
     }
     renderShell();
     if (!offline && PT.state && PT.dataVersion() !== prevVersion) renderView(false);
@@ -64,6 +74,25 @@
     renderSync();
     renderTicker();
     const view = currentView();
+    document.body.classList.toggle('no-key', !PT.key());
+    document.body.classList.toggle('is-admin', view === 'admin');
+    if (view === 'admin') {
+      // The admin page works without a dashboard of your own.
+      $('#join').hidden = true;
+      $('#onboarding').hidden = true;
+      $$('[data-view-panel]').forEach((p) => (p.hidden = p.dataset.viewPanel !== 'admin'));
+      $$('.dock a').forEach((t) => t.removeAttribute('aria-current'));
+      PT.display.tick(TITLES.admin, offline);
+      return;
+    }
+    if (!PT.key()) {
+      $('#onboarding').hidden = true;
+      $$('[data-view-panel]').forEach((p) => (p.hidden = true));
+      PT.access.showJoin();
+      PT.display.tick('Invite', false);
+      return;
+    }
+    $('#join').hidden = true;
     $$('.dock a').forEach((t) => {
       t.hidden = !PT.display.pageOn(t.dataset.view);
       if (t.dataset.view === view) t.setAttribute('aria-current', 'page');
@@ -74,10 +103,6 @@
     // The tab title and icon carry live numbers (Settings > Display), refreshed every second.
     PT.display.tick(TITLES[view], offline);
     if (!PT.state) return;
-    // Code was updated on disk but the running tracker is older (an older one doesn't report a build).
-    PT.outdated = !offline && (!('build' in PT.state) || PT.state.restartNeeded === true);
-    $('#update-bar').hidden = !PT.outdated;
-    renderOfficial();
     // A greeting with your name from the setup.
     const who = PT.state.config.profile && PT.state.config.profile.name;
     const hello = $('#hello');
@@ -95,8 +120,11 @@
     if (onboard && PT.onboarding) PT.onboarding.show();
     $$('[data-view-panel]').forEach((p) => (p.hidden = onboard || (!any && p.dataset.viewPanel !== 'referrals') || p.dataset.viewPanel !== view));
     maybeOfferTour(any, setup);
+    maybeWhatsNew(any, setup);
     maybeOfferFollow(any, setup);
+    if (any && !setup) PT.access.maybeNudgeLink();
   }
+  PT.rerender = () => renderShell();
 
   // Once, a few minutes into using the tracker (after the tour, if it's showing): follow the
   // developer on X. Closing it, or following, means it doesn't come back.
@@ -104,7 +132,7 @@
   function maybeOfferFollow(any, setup) {
     if (followTimer || setup || !any || !PT.state || !PT.state.developer || PT.prefs.get('x.offered')) return;
     followTimer = setTimeout(function tryShow() {
-      if ((PT.tour && PT.tour.active()) || document.querySelector('.tour-offer, .import-offer, dialog[open]')) {
+      if (popupBusy()) {
         followTimer = setTimeout(tryShow, 60 * 1000);
         return;
       }
@@ -120,21 +148,120 @@
     }, PT.state.config.onboardedAt && Date.now() - PT.state.config.onboardedAt < 10 * 60 * 1000 ? 4 * 60 * 1000 : 90 * 1000);
   }
 
-  // Modified or unsigned copies say so on every page (see src/official.js).
-  function renderOfficial() {
-    const o = PT.state && PT.state.official;
-    const bar = $('#official-bar');
-    if (!o || o.state === 'verified') {
-      bar.hidden = true;
-      return;
+  // Pop-ups wait their turn: one at a time, never over the tour or a dialog.
+  const OTHER_POPUPS = '.tour-offer, .import-offer, .link-offer, dialog[open]';
+  const popupBusy = () => Boolean((PT.tour && PT.tour.active()) || document.querySelector(OTHER_POPUPS) || document.querySelector('.whatsnew'));
+
+  // ---------- what's new ----------
+  // One card for everyone who was already using the tracker, the first time they open it after a
+  // release (once per browser), listing what's new since they last saw a card. New dashboards skip
+  // it: the tour covers everything. New tabs wear a dot until they're opened.
+  const RELEASES = [
+    {
+      id: '3.6',
+      at: Date.UTC(2026, 10, 25, 12, 30), // when 3.6.0 went live
+      lede: 'Your referrals now find themselves: no wallets to paste.',
+      cta: ['referrals', 'gift', 'Open Referrals'],
+      items: [
+        { view: 'referrals', icon: 'sparkles', title: 'Referrals, automatic', body: 'Click your “Send AURA to tracker” bookmark on Bulk’s Referrals page while logged in: the wallets you referred are added for you. Drag the bookmark from Points again once first.' },
+        { view: 'referrals', icon: 'wallet', title: 'Your own wallets count', body: 'Any of your tracked Bulk wallets that one of your codes referred is counted in your referral volume automatically.' },
+      ],
+    },
+    {
+      id: '3.5',
+      at: Date.UTC(2026, 10, 25, 11, 30), // when 3.5.0 went live
+      lede: 'Referral AURA is here: your referrals’ live volume and the AURA it earns you.',
+      cta: ['referrals', 'gift', 'Open Referrals'],
+      items: [
+        { view: 'referrals', icon: 'gift', title: 'Referral AURA, live', body: 'Watch your referrals’ Bulk wallets: their volume this week, read live, and the referral AURA it earns you (1 for every 4 Trading AURA they earn).' },
+        { view: 'referrals', icon: 'check', title: 'Count it in your estimates', body: 'One switch adds referral AURA and volume to your Bulk estimate on Points and the drop card. Leagues stay trading-only, as Bulk counts them.' },
+        { view: 'referrals', icon: 'chart', title: 'Checked against Bulk', body: 'Each revealed week shows Bulk’s referral volume and AURA next to the estimate, and corrects it.' },
+      ],
+    },
+    {
+      id: '3.4',
+      at: Date.UTC(2026, 10, 20, 1, 30), // when 3.4.0 went live
+      lede: 'Weekly gauntlets are in, and their estimates check themselves against Bulk.',
+      cta: ['leagues', 'trophy', 'Open Leagues'],
+      items: [
+        { view: 'leagues', icon: 'trophy', title: 'Weekly gauntlet', body: 'This week’s 50,000 AURA gauntlet and your share of it, on Leagues, Points and in the Planner. The Leagues pool and your share work again too.' },
+        { view: 'leagues', icon: 'check', title: 'Checked against Bulk', body: 'After each reveal the tracker compares its gauntlet estimate with the AURA Bulk paid, and scales later estimates to match.' },
+        { view: 'planner', icon: 'calculator', title: 'Price at close', body: 'Set how far the price moves before you close: the closing volume, its fee and its AURA follow.' },
+      ],
+    },
+    {
+      id: '3.2',
+      at: Date.UTC(2026, 10, 18, 9, 0), // when 3.2.0 went live
+      lede: 'The AURA Planner is here, and Leagues now follow Bulk’s rules.',
+      cta: ['planner', 'calculator', 'Open the Planner'],
+      items: [
+        { view: 'planner', icon: 'calculator', title: 'AURA Planner', tag: 'Experimental', body: 'Pick a Bulk market, size, how you open and close and how long you hold: the AURA it should earn and the fees.' },
+        { view: 'leagues', icon: 'trophy', title: 'Leagues, fixed', body: 'Shares split pro-rata by trading AURA as Bulk pays them, the season week, and Bulk’s $5 minimum claim.' },
+        { view: 'fees', icon: 'coins', title: 'Stock markets on Bulk', body: 'TSLA, QQQ, US500 and other stocks and indices are counted at their lower 1.5 bps fee.' },
+      ],
+    },
+    {
+      id: '3.1',
+      at: Date.UTC(2026, 10, 18, 1, 50), // when 3.1.0 went live
+      lede: 'Perps Tracker now shows everything it works out.',
+      cta: ['strategy', 'strategy', 'Open Strategy'],
+      items: [
+        { view: 'strategy', icon: 'strategy', title: 'Strategy page', body: 'A top Arcus trader’s points routine and Bulk’s AURA habits, checked against your trades.' },
+        { view: 'points', icon: 'sigma', title: 'The math behind every estimate', body: 'Your AURA rates, your Arcus rate and how close each estimate has been.' },
+        { view: 'live', icon: 'hourglass', title: 'Bulk hold multiplier', body: 'Each position’s multiplier and the AURA it earns if you close now.' },
+        { view: 'referrals', icon: 'gift', title: 'Your own codes', body: 'Keep your referral links ready to share, with your Bulk referral stats.' },
+      ],
+    },
+  ];
+  const releaseAt = (id) => (RELEASES.find((r) => r.id === id) || {}).at || 0;
+  const NEW_TABS = { strategy: releaseAt('3.1'), planner: releaseAt('3.2'), referrals: releaseAt('3.5') };
+  // Using the tracker before `at` (set up before that release went live).
+  const wasHere = (at) => Boolean(PT.state && PT.state.config && (!PT.state.config.onboardedAt || PT.state.config.onboardedAt < at));
+  const unseen = () => RELEASES.filter((r) => wasHere(r.at) && !PT.prefs.get(`whatsnew.${r.id}`));
+  function markNewTabs() {
+    for (const [view, at] of Object.entries(NEW_TABS)) {
+      const tab = document.querySelector(`.dock a[data-view="${view}"]`);
+      if (tab) tab.classList.toggle('is-new', wasHere(at) && !PT.prefs.get(`seen.${view}`));
     }
-    const why = o.state === 'modified' ? `${o.changes} file${o.changes === 1 ? '' : 's'} differ from the signed release` : o.state === 'bad-signature' ? 'its signature doesn’t match the developer’s key' : 'it isn’t signed by the developer';
-    const html = `${PT.icon('alert')}<span><b>Modified, unofficial build.</b> This copy of the tracker isn’t the official release (${esc(why)}), so its referral links and numbers can’t be vouched for.${o.repo ? ` Get the official version at <a href="${esc(o.repo)}" target="_blank" rel="noopener noreferrer">${esc(o.repo.replace(/^https?:\/\//, ''))}</a>.` : ''}</span>`;
-    if (bar.dataset.html !== html) {
-      bar.innerHTML = html;
-      bar.dataset.html = html;
-    }
-    bar.hidden = false;
+  }
+  let wnTimer = null;
+  function maybeWhatsNew(any, setup) {
+    markNewTabs();
+    if (wnTimer || setup || !any || !unseen().length) return;
+    wnTimer = setTimeout(function tryShow() {
+      const list = unseen();
+      if (!list.length) return;
+      if (currentView() === 'admin' || popupBusy() || (PT.onboarding && PT.onboarding.active)) {
+        wnTimer = setTimeout(tryShow, 10 * 1000);
+        return;
+      }
+      for (const r of list) PT.prefs.set(`whatsnew.${r.id}`, String(Date.now()));
+      const items = list.flatMap((r) => r.items).slice(0, 6);
+      const [ctaView, ctaIcon, ctaText] = list[0].cta;
+      const el = document.createElement('div');
+      el.className = 'whatsnew';
+      el.setAttribute('role', 'dialog');
+      el.setAttribute('aria-labelledby', 'wn-title');
+      el.innerHTML = `
+        <div class="wn-top"><span class="wn-new">New</span><span class="wn-kicker">${PT.icon('sparkles', 'sm')}Version ${esc((PT.state && PT.state.version) || list[0].id)}</span><button type="button" class="icon-btn" data-wn="close" aria-label="Close">${PT.icon('x')}</button></div>
+        <h2 id="wn-title">New features are live</h2>
+        <p>${esc(list[0].lede)}${list.length > 1 ? ' Here’s everything since your last visit:' : ' Here’s what’s new:'}</p>
+        <ul class="wn-list">${items
+          .map((it) => `<li><a href="#${esc(it.view)}" data-wn="go"><span class="wn-ic">${PT.icon(it.icon)}</span><span><b>${esc(it.title)}${it.tag ? ` <i class="chip exp">${esc(it.tag)}</i>` : ''}</b><span>${esc(it.body)}</span></span>${PT.icon('chevron', 'sm wn-go')}</a></li>`)
+          .join('')}</ul>
+        <div class="wn-actions"><a class="btn btn-primary btn-sm" href="#${ctaView}" data-wn="go">${PT.icon(ctaIcon, 'sm')}${esc(ctaText)}</a><button type="button" class="btn btn-sm" data-wn="close">Got it</button></div>`;
+      document.body.appendChild(el);
+      const close = () => {
+        el.classList.add('out');
+        setTimeout(() => el.remove(), 220);
+      };
+      el.addEventListener('click', (ev) => {
+        if (ev.target.closest('[data-wn]')) close();
+      });
+      el.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape') close();
+      });
+    }, 2500);
   }
 
   // Existing users (wallets already set up) get the tour offered once.
@@ -159,13 +286,32 @@
 
   // entered: the page was just opened, so it plays its entrance animation.
   function renderView(force, entered = false) {
-    if (!PT.state) return;
     const view = currentView();
-    if (view === 'referrals') return PT.referrals.load(force);
+    if (view === 'admin') return PT.access.loadAdmin();
+    if (!PT.state) return;
+    if (view === 'referrals') {
+      if (!PT.prefs.get('seen.referrals')) {
+        PT.prefs.set('seen.referrals', String(Date.now()));
+        markNewTabs();
+      }
+      return PT.referrals.load(force);
+    }
     if (!PT.activeExchanges().length) return;
     if (view === 'overview') PT.overview.render(PT.state);
     else if (view === 'live') PT.live.load(force);
-    else if (view === 'strategy') PT.strategy.load(force, entered);
+    else if (view === 'strategy') {
+      if (!PT.prefs.get('seen.strategy')) {
+        PT.prefs.set('seen.strategy', String(Date.now()));
+        markNewTabs();
+      }
+      PT.strategy.load(force, entered);
+    } else if (view === 'planner') {
+      if (!PT.prefs.get('seen.planner')) {
+        PT.prefs.set('seen.planner', String(Date.now()));
+        markNewTabs();
+      }
+      PT.planner.load(force);
+    }
     else if (view === 'fees') PT.fees.load(force);
     else if (view === 'points') PT.points.load(force, entered);
     else if (view === 'leagues') PT.leagues.load(force);
@@ -188,7 +334,7 @@
     el.className = 'sync';
     if (offline) {
       el.classList.add('off');
-      el.innerHTML = '<span class="dot"></span><span class="txt">Tracker offline. Is its window still open?</span>';
+      el.innerHTML = '<span class="dot"></span><span class="txt">Can’t reach the tracker’s server. Retrying…</span>';
       return;
     }
     if (!PT.state) {
@@ -417,6 +563,10 @@
     PT.kick(800);
   });
   window.addEventListener('hashchange', () => {
+    if (/^#k=/.test(location.hash)) {
+      PT.access.boot();
+      return refresh().then(() => renderView(true, true));
+    }
     renderShell();
     renderView(false, true);
     window.scrollTo(0, 0);
@@ -432,10 +582,22 @@
     PT.display.tick(TITLES[currentView()], offline);
     PT.tickHeld();
   }, 1000);
-  // Hidden: tell the tracker right away so its pop-ups play their own sound again. Shown: catch up.
+  // Back to the tab: catch up.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') fetch('/api/state?sound=0&left=1', { keepalive: true }).catch(() => {});
-    else refresh();
+    if (document.visibilityState === 'visible' && PT.key()) refresh();
+  });
+  // Exports: fetched with your dashboard key, then saved by the browser.
+  document.addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-export]');
+    if (!b) return;
+    b.disabled = true;
+    try {
+      await PT.download(`/api/export/${b.dataset.export}`);
+    } catch (e) {
+      $('#wallets-error').textContent = `Couldn't download: ${e.message}`;
+    } finally {
+      b.disabled = false;
+    }
   });
 
   // AURA sent from app.bulk.trade by the "Send AURA to tracker" bookmark (Points page). Asks first:
@@ -470,7 +632,11 @@
       b.disabled = true;
       try {
         const r = await PT.post('/api/points/bulk-import', { text });
-        el.innerHTML = `${PT.icon('check')}<span><b>Imported.</b> ${esc(`${r.wallet ? 'Your AURA' : ''}${r.wallet && r.weeks && r.weeks.length ? ' and ' : ''}${r.weeks && r.weeks.length ? `weeks ${r.weeks.join(', ')}` : ''}`)} saved. You can close this tab.</span><button type="button" class="icon-btn" data-imp="no" aria-label="Close">${PT.icon('x')}</button>`;
+        const rf = r.referees;
+        const refText = rf ? ` Referrals: ${rf.found} wallet${rf.found === 1 ? '' : 's'} found on Bulk${rf.added ? `, ${rf.added} new now watched` : ''}${rf.skipped ? ` (${rf.skipped} over the limit of 25)` : ''}.` : '';
+        const saved = `${r.wallet ? 'Your AURA' : ''}${r.wallet && r.weeks && r.weeks.length ? ' and ' : ''}${r.weeks && r.weeks.length ? `weeks ${r.weeks.join(', ')}` : ''}`;
+        el.innerHTML = `${PT.icon('check')}<span><b>Imported.</b> ${esc(`${saved ? `${saved} saved.` : ''}${refText}`)} You can close this tab.</span><button type="button" class="icon-btn" data-imp="no" aria-label="Close">${PT.icon('x')}</button>`;
+        if (PT.referrals && rf) PT.referrals.load(true);
         PT.kick(300);
         if (PT.points) PT.points.load(true);
       } catch (e) {

@@ -115,16 +115,54 @@
   };
 
   // ---------- API ----------
+  // The server's address: config.js sets it for the website on Vercel; empty means this same site.
+  PT.API = String((window.PT_CONFIG && window.PT_CONFIG.api) || '').replace(/\/+$/, '');
+  // Your dashboard's private key (no sign-up): kept in this browser. Anyone with it can open your
+  // dashboard, so it's only ever sent to the tracker's server.
+  let memKey = null;
+  PT.key = () => PT.prefs.get('key') || memKey;
+  PT.setKey = (k) => {
+    memKey = k || null;
+    try {
+      if (k) localStorage.setItem('perps.key', k);
+      else localStorage.removeItem('perps.key');
+    } catch {}
+  };
+  const authHeaders = () => {
+    const k = PT.key();
+    return k ? { Authorization: `Bearer ${k}` } : {};
+  };
+  const failed = async (r) => {
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401 && j.code === 'auth' && PT.onAuthLost) PT.onAuthLost();
+    const e = new Error(j.error || `HTTP ${r.status}`);
+    e.status = r.status;
+    e.code = j.code;
+    return e;
+  };
   PT.getJSON = async (path) => {
-    const r = await fetch(path, { cache: 'no-store' });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const r = await fetch(PT.API + path, { cache: 'no-store', headers: authHeaders() });
+    if (!r.ok) throw await failed(r);
     return r.json();
   };
-  PT.post = async (path, body) => {
-    const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-    return j;
+  PT.post = async (path, body, extraHeaders) => {
+    const r = await fetch(PT.API + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders(), ...(extraHeaders || {}) }, body: JSON.stringify(body || {}) });
+    if (!r.ok) throw await failed(r);
+    return r.json().catch(() => ({}));
+  };
+  // A file from the server (exports), saved through the browser.
+  PT.download = async (path) => {
+    const r = await fetch(PT.API + path, { cache: 'no-store', headers: authHeaders() });
+    if (!r.ok) throw await failed(r);
+    const name = (/filename="([^"]+)"/.exec(r.headers.get('Content-Disposition') || '') || [])[1] || path.split('/').pop();
+    const url = URL.createObjectURL(await r.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   };
 
   // ---------- tooltip ----------
@@ -177,9 +215,7 @@
   // Animation frames from the window that's showing: Pulse's floating window sets PT.rafWin, because
   // a background tab gets no frames.
   PT.raf = (f) => (PT.rafWin || window).requestAnimationFrame(f);
-  // The hold multiplier: a round trip held h hours earns 1 + perHour × h times a quick one. perHour
-  // comes from the AURA model (this week's); builds without a model for open positions send none,
-  // and everything that shows the multiplier hides (PT.holdKnown).
+  // Bulk's hold multiplier: what an hour open adds (from the AURA model on the server).
   PT.bulkPerHour = (m) => (m && m.perHour > 0 ? m.perHour : (PT.state && PT.state.bulkHold && PT.state.bulkHold.perHour) || 0);
   PT.holdKnown = () => Boolean(PT.state && PT.state.bulkHold && PT.state.bulkHold.perHour > 0);
   PT.bulkMult = (h, m) => 1 + PT.bulkPerHour(m) * Math.max(0, h);
